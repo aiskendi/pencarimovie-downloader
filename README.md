@@ -36,7 +36,7 @@ mkdir pencarimovie-downloader && cd pencarimovie-downloader && wget https://gith
 
 ### Termux (Android)
 
-The Google Play version of Termux is outdated and will not work correctly. Install Termux from the official GitHub releases page instead: https://github.com/termux/termux-app/releases
+The Google Play version of Termux will not work correctly. Install Termux from the official GitHub releases page instead: https://github.com/termux/termux-app/releases
 
 For most modern Android phones with ARM64 CPUs, this APK should work: https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_arm64-v8a.apk
 
