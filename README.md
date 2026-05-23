@@ -14,13 +14,13 @@ This app runs on your own device and opens in your browser. It searches PencariM
 ### Windows
 
 ```powershell
-wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-windows-x86_64.zip -OutFile pencarimovie.zip; Expand-Archive pencarimovie.zip -DestinationPath . -Force; .\start.bat
+Invoke-WebRequest -Uri https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-windows-x86_64.zip -OutFile pencarimovie.zip; Expand-Archive pencarimovie.zip -DestinationPath . -Force; .\start.bat
 ```
 
 ### Linux
 
 ```bash
-mkdir pencarimovie-downloader && cd pencarimovie-downloader && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-linux-x86_64.tar.gz -O pencarimovie.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+mkdir pencarimovie-downloader && cd pencarimovie-downloader && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-linux-x86_64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 ```
 
 ### macOS (not yet tested)
@@ -31,7 +31,7 @@ Choose the correct macOS package for your Mac:
 - Intel Mac: `pencarimovie-downloader-mac-x86_64.tar.gz`
 
 ```bash
-mkdir pencarimovie-downloader && cd pencarimovie-downloader && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-mac-arm64.tar.gz -O pencarimovie.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+mkdir pencarimovie-downloader && cd pencarimovie-downloader && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 ```
 
 ### Termux (Android)
@@ -41,7 +41,7 @@ The Google Play version of Termux will not work correctly. Install Termux from t
 For most modern Android phones with ARM64 CPUs, this APK should work: https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_arm64-v8a.apk
 
 ```bash
-pkg install wget proot -y && mkdir pencarimovie-downloader && cd pencarimovie-downloader && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-linux-aarch64.tar.gz -O pencarimovie.tar.gz && tar -xzf pencarimovie.tar.gz && bash install-termux.sh && bash start-termux.sh
+pkg install curl proot -y && mkdir pencarimovie-downloader && cd pencarimovie-downloader && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-linux-aarch64.tar.gz && tar -xzf pencarimovie.tar.gz && bash install-termux.sh && bash start-termux.sh
 ```
 
 Restart on Termux:
