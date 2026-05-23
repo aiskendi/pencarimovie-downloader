@@ -1,5 +1,7 @@
 # PencariMovie Downloader
 
+https://github.com/user-attachments/assets/8bd505e3-7873-4b6a-9659-1ed31e28bfdf
+
 Local Telegram file downloader.
 
 This app runs on your own device and opens in your browser. It searches PencariMovie results, resolves Telegram file links when needed, then downloads or plays supported files through the local downloader.
