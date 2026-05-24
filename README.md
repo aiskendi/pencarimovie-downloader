@@ -6,6 +6,26 @@ Local Telegram file downloader.
 
 This app runs on your own device and opens in your browser. It searches PencariMovie results, resolves Telegram file links when needed, then downloads or plays supported files through the local downloader.
 
+## FAQ
+
+### ❓ What does it do?
+
+- **Direct bot server connection** – Talks straight to Telegram’s bot API, which is faster than going through a normal user client.
+- **No Telegram client needed** – Everything runs in your web browser; no app, no installation.
+- **Zero dependencies** – A standalone script powered by FrankenPHP. No PHP, no web server, nothing extra to install.
+
+### ❓ Why do I need it?
+
+- **Privacy first** – Log in with just a bot token, no phone number required. (Ask a family member or friend with Telegram to create a bot for you – it’s super easy.)
+- **Works on any device** – Smart TVs, TV boxes, car tablets… if it has a browser, it works. Just open `http://your-lan-ip:port`.
+- **Straight to the point** – No cluttered chats, no channels, no bot search. Just pure, focused file searching.
+
+### ❓ How do I get started?
+
+1. Get a bot token from [@CreateNewTelegramBot](https://t.me/CreateNewTelegramBot?start=addbot) (takes 30 seconds).
+2. Run the script and open the web panel.
+3. Start searching and downloading instantly.
+
 ## Warning
 
 - Use only on a trusted private network.
