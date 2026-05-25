@@ -63,13 +63,13 @@ The Google Play version of Termux will not work correctly. Install Termux from t
 For most modern Android phones with ARM64 CPUs, this APK should work: https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_arm64-v8a.apk
 
 ```bash
-pkg install wget proot -y && mkdir pencarimovie-downloader && cd pencarimovie-downloader && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-linux-aarch64.tar.gz -O pencarimovie.tar.gz && tar -xzf pencarimovie.tar.gz && bash install-termux.sh && bash start-termux.sh
+pkg install wget proot -y && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-termux.sh && bash pencarimovie-termux.sh
 ```
 
-Restart on Termux:
+Start on Termux:
 
 ```bash
-bash restart-termux.sh
+bash pencarimovie-termux.sh
 ```
 
 ### On Browser
