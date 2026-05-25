@@ -10,7 +10,7 @@ This app runs on your own device and opens in your browser. It searches PencariM
 
 ### ❓ What does it do?
 
-- **Direct bot server connection** – Talks straight to Telegram’s bot API, which is faster than going through a normal user client.
+- **Direct bot server connection** – Talks straight to Telegram’s MTProto, which is faster than going through a normal user client.
 - **No Telegram client needed** – Everything runs in your web browser; no app, no installation.
 - **Zero dependencies** – A standalone script powered by FrankenPHP. No PHP, no web server, nothing extra to install.
 
@@ -33,28 +33,6 @@ This app runs on your own device and opens in your browser. It searches PencariM
 
 ## Download and run
 
-### Windows
-
-```powershell
-Invoke-WebRequest -Uri https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-windows-x86_64.zip -OutFile pencarimovie.zip; Expand-Archive pencarimovie.zip -DestinationPath . -Force; .\start.bat
-```
-
-### Linux
-
-```bash
-mkdir pencarimovie-downloader && cd pencarimovie-downloader && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-linux-x86_64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
-```
-
-### macOS (not yet tested)
-
-Choose the correct macOS package for your Mac:
-
-- Apple Silicon: `pencarimovie-downloader-mac-arm64.tar.gz`
-- Intel Mac: `pencarimovie-downloader-mac-x86_64.tar.gz`
-
-```bash
-mkdir pencarimovie-downloader && cd pencarimovie-downloader && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
-```
 
 ### Termux (Android)
 
@@ -66,10 +44,48 @@ For most modern Android phones with ARM64 CPUs, this APK should work: https://gi
 pkg install wget proot -y && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-termux.sh && bash pencarimovie-termux.sh
 ```
 
-Start on Termux:
-
 ```bash
 bash pencarimovie-termux.sh
+bash pencarimovie-termux.sh --stop
+bash pencarimovie-termux.sh --restart
+```
+
+
+### Windows
+
+```powershell
+Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-windows.bat" -OutFile "pencarimovie-windows.bat" -UseBasicParsing; .\pencarimovie-windows.bat
+```
+
+```
+.\pencarimovie-windows.bat           # Start
+.\pencarimovie-windows.bat --stop    # Stop
+.\pencarimovie-windows.bat --restart # Restart
+```
+
+### Linux
+
+```bash
+curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downloader/releas
+es/download/v1.0.0/pencarimovie-linux.sh && bash pencarimovie-linux.sh
+```
+
+```bash
+bash pencarimovie-linux.sh
+bash pencarimovie-linux.sh --stop
+bash pencarimovie-linux.sh --restart
+```
+
+
+### macOS (not yet tested)
+
+Choose the correct macOS package for your Mac:
+
+- Apple Silicon: `pencarimovie-downloader-mac-arm64.tar.gz`
+- Intel Mac: `pencarimovie-downloader-mac-x86_64.tar.gz`
+
+```bash
+mkdir pencarimovie-downloader && cd pencarimovie-downloader && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 ```
 
 ### On Browser
