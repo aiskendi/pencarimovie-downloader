@@ -33,6 +33,10 @@ This app runs on your own device and opens in your browser. It searches PencariM
 
 ## Download and run
 
+### Android App 
+
+ARM64
+https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie_arm64-v8a.apk
 
 ### Termux (Android)
 
