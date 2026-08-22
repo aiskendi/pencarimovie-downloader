@@ -1,4 +1,4 @@
-# PencariMovie Downloader
+# PencariMovie Server
 
 Local Telegram file downloader.
 
@@ -20,9 +20,31 @@ This app runs on your own device and opens in your browser. It searches PencariM
 
 ### ❓ How do I get started?
 
-1. Get a bot token from [@CreateNewTelegramBot](https://t.me/CreateNewTelegramBot?start=addbot) (takes 30 seconds).
+1. Get a bot token from [@CreateNewTelegramBot](https://t.me/CreateNewTelegramBot?start=localserver) (takes 30 seconds).
 2. Run the script and open the web panel.
 3. Start searching and downloading instantly.
+
+## Stremio / Nuvio Addon
+
+The server includes a built‑in addon compatible with Stremio (and Nuvio). Once the server is running and a bot token is configured, you can add it to your Stremio client:
+
+- **Addon URL**: `http://127.0.0.1:8088` (or replace with your LAN IP if accessing from another device).
+- **Endpoints**:
+  - `http://127.0.0.1:8088/manifest.json` – addon manifest (automatically used when you add the base URL).
+
+### How to install in Stremio
+
+1. Open Stremio.
+2. Go to **Addons** → **Community Addons**.
+3. In the **Addon URL** field, enter `http://127.0.0.1:8088/manifest.json` (or your local IP if the server is on another device).
+4. Click **Install**.
+5. The addon will appear in your addon list; you can now browse and play content from your PencariMovie library.
+
+### Requirements
+
+- The server must be running and the bot token must be validated (the web panel will guide you through setup).
+- The addon uses the same token – no additional configuration is needed.
+- For streaming, ensure your Stremio player can handle the media formats returned by the server.
 
 ## Warning
 
@@ -106,6 +128,4 @@ On first launch, the app shows the bot-token setup screen before the search page
 4. After validation succeeds, the search page opens.
 5. Search a title, then click **Download** or **Resolve Link**.
 
-If the app opens the search page without asking for a bot token, click **Reset** and refresh the browser. The app must have a bot token saved in `storage/config.json` before downloads can work.
-
-Do not share your local URL, `storage/config.json`, or bot token with other people.
+Do not share your local URL or bot token with other people.
