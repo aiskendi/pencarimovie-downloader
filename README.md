@@ -90,8 +90,7 @@ Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/rele
 ### Linux
 
 ```bash
-curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downloader/releas
-es/download/v1.0.0/pencarimovie-linux.sh && bash pencarimovie-linux.sh
+curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-linux.sh && bash pencarimovie-linux.sh
 ```
 
 ```bash
