@@ -41,35 +41,6 @@ function fd_get_storage_dir(): string
     }
 
     $appStorage = __DIR__ . DIRECTORY_SEPARATOR . 'storage';
-    $tempDir = realpath(sys_get_temp_dir());
-    $realDir = realpath(__DIR__);
-    $isTemp = false;
-    if ($tempDir !== false && $realDir !== false) {
-        if (str_starts_with($realDir, $tempDir)) {
-            $isTemp = true;
-        }
-    }
-    if (str_contains($realDir ?: '', 'frankenphp_')) {
-        $isTemp = true;
-    }
-
-    if (!$isTemp && is_dir($appStorage) && is_writable($appStorage)) {
-        return $storageDir = $appStorage;
-    }
-
-    $home = getenv('HOME');
-    if ($home === false) {
-        $home = getenv('USERPROFILE');
-    }
-    if ($home === false && getenv('HOMEDRIVE') !== false && getenv('HOMEPATH') !== false) {
-        $home = getenv('HOMEDRIVE') . getenv('HOMEPATH');
-    }
-
-    if ($home !== false && is_dir($home) && is_writable($home)) {
-        $homeStorage = rtrim($home, '/\\') . DIRECTORY_SEPARATOR . '.pencarimovie-downloader' . DIRECTORY_SEPARATOR . 'storage';
-        return $storageDir = $homeStorage;
-    }
-
     return $storageDir = $appStorage;
 }
 
