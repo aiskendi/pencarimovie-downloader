@@ -274,17 +274,6 @@ function fd_require_local_request(): void
     }
 }
 
-function fd_load_index(): array
-{
-    $path = fd_storage_path('storage/index.json');
-    if (!is_file($path)) {
-        return [];
-    }
-
-    $items = json_decode((string) file_get_contents($path), true);
-    return is_array($items) ? $items : [];
-}
-
 function fd_decode_download_payload(string $payload): array
 {
     $payload = strtr($payload, '-_', '+/');
@@ -300,50 +289,6 @@ function fd_decode_download_payload(string $payload): array
 
     $json = json_decode($decoded, true);
     return is_array($json) ? $json : [];
-}
-
-function fd_normalize_text(string $value): string
-{
-    $value = mb_strtolower($value);
-    return trim(preg_replace('/\s+/', ' ', $value) ?? '');
-}
-
-function fd_filter_items(array $items, string $query): array
-{
-    $query = fd_normalize_text($query);
-    if ($query === '') {
-        return array_values($items);
-    }
-
-    return array_values(array_filter($items, static function (array $item) use ($query): bool {
-        $haystack = fd_normalize_text(implode(' ', [
-            $item['title'] ?? '',
-            $item['short_code'] ?? '',
-            $item['chat_id'] ?? '',
-            (string) ($item['message_id'] ?? ''),
-        ]));
-
-        return str_contains($haystack, $query);
-    }));
-}
-
-function fd_paginate_items(array $items, int $page = 1, int $limit = 20, int $offset = -1): array
-{
-    $page = max(1, $page);
-    $limit = max(1, min(100, $limit));
-    if ($offset < 0) {
-        $offset = ($page - 1) * $limit;
-    }
-    $offset = max(0, $offset);
-    $slice = array_slice($items, $offset, $limit);
-
-    return [
-        'items' => array_values($slice),
-        'page' => $page,
-        'limit' => $limit,
-        'total' => count($items),
-        'has_more' => ($offset + count($slice)) < count($items),
-    ];
 }
 
 function fd_http_json(string $url, array $payload = [], string $method = 'GET', int $timeout = 20): array
@@ -2922,26 +2867,6 @@ if ($isNuvioRoute) {
     fd_stremio_json(['ok' => 0, 'message' => 'Unknown Nuvio addon route'], 404);
 }
 
-// ─── [DIAGNOSTIC] Log PHP ini values for Termux debugging ─────────────
-if (str_starts_with($path, '/api/')) {
-    $phprc = getenv('PHPRC');
-    fd_log('api request diagnostics', [
-        'path' => $path,
-        'method' => $method,
-        'display_errors' => ini_get('display_errors'),
-        'html_errors' => ini_get('html_errors'),
-        'log_errors' => ini_get('log_errors'),
-        'error_reporting' => ini_get('error_reporting'),
-        'memory_limit' => ini_get('memory_limit'),
-        'php_ini_loaded' => php_ini_loaded_file(),
-        'env_PHPRC' => $phprc !== false ? $phprc : '(not set)',
-        'fileinfo_loaded' => extension_loaded('fileinfo'),
-        'mbstring_loaded' => extension_loaded('mbstring'),
-        'openssl_loaded' => extension_loaded('openssl'),
-        'ob_level' => ob_get_level(),
-        'php_sapi' => PHP_SAPI,
-    ]);
-}
 
 if (str_starts_with($path, '/api/')) {
     if (!headers_sent()) {
@@ -3179,30 +3104,6 @@ if (str_starts_with($path, '/api/')) {
         fd_json(['ok' => 1, 'message' => 'Session cleared.']);
     }
 
-    // ── GET /api/search | /api/startlist — legacy local index search ────────
-    if ($path === '/api/search' || $path === '/api/startlist') {
-        $query = $_GET['q'] ?? '';
-        $page = (int) ($_GET['page'] ?? 1);
-        $limit = (int) ($_GET['limit'] ?? 20);
-        $offset = (int) ($_GET['offset'] ?? -1);
-        $items = fd_load_index();
-        if ($path === '/api/startlist' && $query === '') {
-            $query = 'sample';
-        }
-        $items = fd_filter_items($items, (string) $query);
-        $paged = fd_paginate_items($items, $page, $limit, $offset);
-
-        fd_json([
-            'ok' => 1,
-            'mode' => $path === '/api/startlist' ? 'startlist' : 'search',
-            'query' => (string) $query,
-            'page' => $paged['page'],
-            'limit' => $paged['limit'],
-            'total' => $paged['total'],
-            'has_more' => $paged['has_more'],
-            'items' => $paged['items'],
-        ]);
-    }
 
     // ── GET /api/proxy-stream — proxy streaming data from WordPress AJAX ────
     if ($path === '/api/proxy-stream' && $method === 'GET') {
