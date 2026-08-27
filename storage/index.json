@@ -1,0 +1,18 @@
+[
+  {
+    "title": "Sample video",
+    "short_code": "SAMPLE1",
+    "chat_id": "-1000000000001",
+    "message_id": 101,
+    "file_type": "video",
+    "file_size": 10485760
+  },
+  {
+    "title": "Sample document",
+    "short_code": "SAMPLE2",
+    "chat_id": "-1000000000002",
+    "message_id": 102,
+    "file_type": "document",
+    "file_size": 5242880
+  }
+]

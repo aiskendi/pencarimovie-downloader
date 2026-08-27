@@ -1,4 +1,4 @@
-# PencariMovie Server
+# PencariMovie Downloader
 
 Local Telegram file downloader.
 
@@ -49,11 +49,11 @@ The server includes a built‑in addon compatible with Stremio (and Nuvio). Once
 ## Warning
 
 - Use only on a trusted private network.
-- Do not expose your bot token or config files.
+- Do not expose your bot token or session files.
 
 ## Download and run
 
-### Android App 
+### Android App
 
 ARM64
 https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie_arm64-v8a.apk
@@ -74,14 +74,13 @@ bash pencarimovie-termux.sh --stop
 bash pencarimovie-termux.sh --restart
 ```
 
-
 ### Windows
 
 ```powershell
 Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-windows.bat" -OutFile "pencarimovie-windows.bat" -UseBasicParsing; .\pencarimovie-windows.bat
 ```
 
-```
+```text
 .\pencarimovie-windows.bat           # Start
 .\pencarimovie-windows.bat --stop    # Stop
 .\pencarimovie-windows.bat --restart # Restart
@@ -98,7 +97,6 @@ bash pencarimovie-linux.sh
 bash pencarimovie-linux.sh --stop
 bash pencarimovie-linux.sh --restart
 ```
-
 
 ### macOS (not yet tested)
 
@@ -123,8 +121,13 @@ On first launch, the app shows the bot-token setup screen before the search page
 
 1. Paste your Telegram bot token in the **Bot Token** field.
 2. Click **Validate & Continue**.
-3. Wait until the token is saved locally and synced to PencariMovie.
-4. After validation succeeds, the search page opens.
-5. Search a title, then click **Download** or **Resolve Link**.
+3. The backend logs in via MadelineProto, verifies with `getSelf()`, then **discards the token** (only the encrypted session file is kept).
+4. The token is also synced to PencariMovie.com for webhook setup.
+5. After validation succeeds, the search page opens.
+6. Search a title, then click **Download** or **Resolve Link**.
 
-Do not share your local URL or bot token with other people.
+On subsequent launches, the existing session resumes automatically. If the session expires, the setup screen appears again for re-login.
+
+**Security**: The bot token is never stored on disk. Only the MadelineProto session file (`storage/session.madeline`) persists after login. The bot ID comes from `getSelf()`, not token parsing. The `/api/config` endpoint has been removed — no credentials are exposed via the API.
+
+Do not share your local URL, session files, or bot token with other people.

@@ -1,0 +1,6 @@
+{
+  "app_name": "PencariMovie Downloader",
+  "bot_token": "",
+  "madeline_session": "storage/session.madeline",
+  "index_file": "storage/index.json"
+}

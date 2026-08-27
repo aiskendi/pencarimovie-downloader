@@ -1,0 +1,15 @@
+{
+  "name": "pencarimovie-downloader",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local browser-based Telegram file downloader with a PHP backend and MadelineProto streaming.",
+  "main": "router.php",
+  "scripts": {
+    "install:php": "install.bat",
+    "start": "start.bat",
+    "start:php": "php -S 0.0.0.0:8088 router.php"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

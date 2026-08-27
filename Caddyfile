@@ -1,0 +1,42 @@
+{ # FrankenPHP uses Caddy under the hood. # This Caddyfile is based on the official FrankenPHP template: # https://github.com/php/frankenphp/blob/main/caddy/frankenphp/Caddyfile
+
+    # Skip automatic HTTPS certificate install for local dev
+    skip_install_trust
+
+    # Inject extra global options via environment variable
+    {$CADDY_GLOBAL_OPTIONS}
+
+    # FrankenPHP-specific configuration
+    frankenphp {
+    	# PHP ini directives can be set here
+    	# (openssl.cafile is PHP_INI_SYSTEM — must be set in php.ini, not here)
+    	{$FRANKENPHP_CONFIG}
+    }
+
+}
+
+# Extra Caddy configuration via environment variable
+
+{$CADDY_EXTRA_CONFIG}
+
+# Serve on all interfaces, port 8088, HTTP only (no TLS for local dev)
+
+:8088 { # Serve from the embedded/current directory
+root \* .
+
+    # Enable compression
+    encode zstd br gzip
+
+    # FrankenPHP: route requests through index.php
+    php_server {
+    	index index.php
+    }
+
+    # Also serve static files from public/
+    file_server
+
+}
+
+# Load any additional Caddyfiles dropped into Caddyfile.d/
+
+import Caddyfile.d/\*.caddyfile

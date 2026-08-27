@@ -1,0 +1,22 @@
+; TG FastDownloader bundled PHP/FrankenPHP config (Unix/Linux/Termux)
+;
+; FrankenPHP on Unix is statically compiled — all standard extensions (fileinfo,
+; curl, mbstring, openssl, zip, etc.) are built-in. Dynamic extension loading is
+; not supported, so extension= lines are commented out.
+
+;extension_dir="ext"
+;extension=fileinfo
+;extension=curl
+;extension=mbstring
+;extension=openssl
+;extension=zip
+
+; MadelineProto IPC settings (normally passed via -d flags, but frankenphp php-cli
+; on Unix does not support -d, so they are set here directly).
+html_errors = 0
+display_errors = 0
+log_errors = 1
+
+; Disable opcache for FrankenPHP static builds.
+opcache.enable=0
+opcache.enable_cli=0

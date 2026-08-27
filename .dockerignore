@@ -1,0 +1,15 @@
+target/
+dist/
+vendor/
+.git/
+android/
+termux-packages/
+libtalloc_extract/
+php_extract/
+proot/
+*.zip
+*.deb
+*.apk
+*.tar*
+*.gz
+bin/

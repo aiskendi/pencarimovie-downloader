@@ -1,0 +1,19 @@
+{
+  "name": "pencarimovie/downloader",
+  "description": "Local browser-based Telegram downloader with MadelineProto streaming.",
+  "type": "project",
+  "require": {
+    "php": ">=8.2",
+    "danog/madelineproto": "^8.4"
+  },
+  "autoload": {
+    "psr-4": {
+      "TGFastDownloader\\": "src/"
+    }
+  },
+  "config": {
+    "sort-packages": true
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

@@ -1,0 +1,22 @@
+#!/bin/sh
+# Wrapper: calls FrankenPHP's embedded PHP CLI
+# MadelineProto's ProcessRunner needs a standalone 'php' binary on PATH.
+# This wrapper provides one using the bundled frankenphp php-cli command.
+#
+# frankenphp php-cli treats the first positional argument as the PHP file
+# to run, and does NOT support PHP CLI flags like -d. We strip those flags
+# here since the corresponding ini values are set in bin/php.ini.
+
+cd "$(dirname "$0")" || exit 1
+
+# Filter out -d options; they are configured in bin/php.ini
+# MadelineProto's ProcessRunner passes -d flags before the script path.
+# Use POSIX-compatible shift (no bash arrays needed).
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -d*) shift ;;
+    *) break ;;
+  esac
+done
+
+exec ./frankenphp php-cli "$@"

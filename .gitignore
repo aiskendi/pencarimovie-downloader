@@ -1,0 +1,105 @@
+AGENTS.md
+
+# Dependencies installed locally; release artifacts may bundle vendor/ separately.
+vendor/
+
+# Bundled native runtime binaries (distributed via GitHub releases, not committed directly)
+bin/*.exe
+bin/*.dll
+bin/*.lib
+bin/*.so*
+bin/dev/
+bin/ext/
+bin/extras/
+bin/lib/
+bin/proot-*
+bin/snapshot.txt
+bin/news.txt
+bin/license.txt
+bin/readme-redist-bins.txt
+bin/deplister.exe
+bin/pharcommand.phar
+
+# Local secrets and runtime state.
+storage/config.json
+storage/api_credentials.json
+storage/api_secret.key
+storage/bot_id.txt
+storage/version_check.json
+storage/.secret.key
+storage/session.madeline/
+storage/session.madeline*
+storage/*.madeline
+storage/*.madeline.lock
+storage/*.madeline.safe.php
+
+# Android project (excluded from repository)
+android/
+build-proot-termux.sh
+build-rootfs-termux.sh
+scripts/package-android.*
+scripts/build-bootstrap.ps1
+
+# References and sub-repos
+references/
+
+# Internal plans & development notes
+plans/
+
+# Build extracts, bootstrap sources, and temporary sub-repos
+libtalloc_extract/
+php_extract/
+termux-packages/
+proot/
+
+# Temporary / debug scripts and root files
+0x00
+debug.php
+patch-urls.php
+test_*.php
+test_*.txt
+termux-*.txt
+termux-*.gz
+InRelease.txt
+Packages.gz
+frankenphp-*
+pencarimovie*
+proot*
+libtalloc*
+libtirpc*
+php_*
+
+# Logs and generated runtime data.
+*.log
+MadelineProto.log
+log/
+downloads/
+
+# Release and build artifacts.
+dist/
+TG-FASTDOWNLOADER/
+*.zip
+*.tar.gz
+*.tgz
+*.tar
+*.deb
+*.apk
+*.lnk
+
+# Local FrankenPHP / PHP static build workspaces and caches.
+.spc.cache.php
+buildroot/
+source/
+pkgroot/
+php-sdk-binary-tools/
+spc
+spc.exe
+
+# OS/editor noise and local properties.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+local.properties
+*.jks
+release-keystore-password.txt
