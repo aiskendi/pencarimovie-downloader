@@ -14,10 +14,9 @@ To ensure MadelineProto sessions, cached credentials, and configurations persist
 
 - [`backend.php`](backend.php) implements [`fd_get_storage_dir()`](backend.php:16) and [`fd_storage_path()`](backend.php:73).
 - Writable storage is dynamically discovered in order of precedence:
-  1. `PENCARIMOVIE_STORAGE_DIR` environment variable.
-  2. Current working directory (`./storage`).
-  3. Non-ephemeral app directory (`__DIR__/storage`).
-  4. User home directory (`~/.pencarimovie-downloader/storage` or `%USERPROFILE%\.pencarimovie-downloader\storage`).
+  1. Current working directory (`./storage`).
+  2. Non-ephemeral app directory (`__DIR__/storage`).
+  3. User home directory (`~/.pencarimovie-downloader/storage` or `%USERPROFILE%\.pencarimovie-downloader\storage`).
 
 ---
 

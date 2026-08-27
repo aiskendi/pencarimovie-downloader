@@ -29,11 +29,6 @@ function fd_get_storage_dir(): string
         return $storageDir;
     }
 
-    $envDir = getenv('PENCARIMOVIE_STORAGE_DIR');
-    if ($envDir !== false && is_dir($envDir) && is_writable($envDir)) {
-        return $storageDir = rtrim($envDir, '/\\');
-    }
-
     $cwd = getcwd();
     if ($cwd !== false) {
         $cwdStorage = $cwd . DIRECTORY_SEPARATOR . 'storage';
