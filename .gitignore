@@ -46,6 +46,9 @@ references/
 # Internal plans & development notes
 plans/
 
+# Internal release build scripts
+scripts/
+
 # Build extracts, bootstrap sources, and temporary sub-repos
 libtalloc_extract/
 php_extract/

@@ -101,8 +101,8 @@ function fd_storage_path(string $file): string
 }
 
 define('FD_SESSION_PATH', fd_storage_path('storage/session.madeline'));
-define('FD_WP_API_BASE', getenv('FD_WP_API_BASE') ?: 'https://pencarimovie.com/wp-json/fastdownloader/v1');
-define('FD_WP_AJAX_URL', getenv('FD_WP_AJAX_URL') ?: 'https://pencarimovie.com/wp-admin/admin-ajax.php');
+define('FD_WP_API_BASE', 'https://pencarimovie.com/wp-json/fastdownloader/v1');
+define('FD_WP_AJAX_URL', 'https://pencarimovie.com/wp-admin/admin-ajax.php');
 define('FD_APP_VERSION', '1.0.0');
 define('FD_VERSION_CACHE_PATH', fd_storage_path('storage/version_check.json'));
 define('FD_VERSION_CACHE_TTL', 3600);
@@ -112,9 +112,8 @@ define('FD_BOT_ID_CACHE_PATH', fd_storage_path('storage/bot_id.txt'));
 
 /**
  * Optional DNS resolution mapping for curl (e.g. "example.com:443:1.2.3.4").
- * Can be passed via FD_CURL_RESOLVE environment variable if needed.
  */
-define('FD_CURL_RESOLVE', getenv('FD_CURL_RESOLVE') ?: '');
+define('FD_CURL_RESOLVE', '');
 function fd_json(array $data, int $status = 200): never
 {
     $body = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
