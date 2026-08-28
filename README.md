@@ -64,6 +64,8 @@ The Google Play version of Termux will not work correctly. Install Termux from t
 
 For most modern Android phones with ARM64 CPUs, this APK should work: https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_arm64-v8a.apk
 
+Universal arm64-v8a, armeabi-v7a, x86, and x86_64: https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_universal.apk
+
 ```bash
 pkg install wget proot -y && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-termux.sh && bash pencarimovie-termux.sh
 ```
@@ -120,14 +122,12 @@ http://127.0.0.1:8088
 On first launch, the app shows the bot-token setup screen before the search page.
 
 1. Paste your Telegram bot token in the **Bot Token** field.
-2. Click **Validate & Continue**.
-3. The backend logs in via MadelineProto, verifies with `getSelf()`, then **discards the token** (only the encrypted session file is kept).
-4. The token is also synced to PencariMovie.com for webhook setup.
-5. After validation succeeds, the search page opens.
-6. Search a title, then click **Download** or **Resolve Link**.
+2. Click **Validate**.
+3. The token is also synced to PencariMovie.com for webhook setup.
+4. After validation succeeds, the homepage opens.
 
 On subsequent launches, the existing session resumes automatically. If the session expires, the setup screen appears again for re-login.
 
 **Security**: The bot token is never stored on disk. Only the MadelineProto session file (`storage/session.madeline`) persists after login. The bot ID comes from `getSelf()`, not token parsing. The `/api/config` endpoint has been removed — no credentials are exposed via the API.
 
-Do not share your local URL, session files, or bot token with other people.
+Do not share your session files, or bot token with other people.
