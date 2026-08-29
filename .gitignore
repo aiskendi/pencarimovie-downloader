@@ -21,10 +21,14 @@ bin/deplister.exe
 bin/pharcommand.phar
 
 # Local secrets and runtime state.
+.release-tag
+storage/tray.pid
+storage/tray.log
 storage/config.json
 storage/api_credentials.json
 storage/api_secret.key
 storage/bot_id.txt
+storage/session_meta.json
 storage/version_check.json
 storage/.secret.key
 storage/session.madeline/
@@ -67,6 +71,9 @@ InRelease.txt
 Packages.gz
 frankenphp-*
 pencarimovie*
+!pencarimovie-linux.sh
+!pencarimovie-termux.sh
+!pencarimovie-windows.bat
 proot*
 libtalloc*
 libtirpc*

@@ -16,7 +16,7 @@ To ensure MadelineProto sessions, cached credentials, and configurations persist
 - Writable storage is dynamically discovered in order of precedence:
   1. Current working directory (`./storage`).
   2. Non-ephemeral app directory (`__DIR__/storage`).
-  3. User home directory (`~/.pencarimovie-downloader/storage` or `%USERPROFILE%\.pencarimovie-downloader\storage`).
+  3. User home directory (`~/.pencarimovie-server/storage` or `%USERPROFILE%\.pencarimovie-server\storage`).
 
 ---
 

@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+print_banner() {
+  [ -n "${PENCARIMOVIE_NO_BANNER:-}" ] && return 0
+  local orange="" reset=""
+  if [ -t 1 ]; then
+    orange="$(printf '\033[38;5;208m')"
+    reset="$(printf '\033[0m')"
+  fi
+  printf '%s' "$orange"
+  cat <<'EOF'
+
+ ========================================
+          PencariMovie Server
+ ========================================
+
+EOF
+  printf '%s' "$reset"
+}
+
+print_banner
+
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FRANKENPHP_BIN="$ROOT_DIR/bin/frankenphp"
 HOST="${HOST:-0.0.0.0}"
@@ -8,6 +28,49 @@ PORT="${PORT:-8088}"
 TMP_DIR="$ROOT_DIR/tmp"
 LOG_FILE="${LOG_FILE:-$ROOT_DIR/frankenphp.log}"
 PID_FILE="$ROOT_DIR/.frankenphp.pid"
+
+# Detect LAN IP outside proot. FrankenPHP's PATH is only bin/, so PHP cannot
+# exec Termux ifconfig/getprop. Write the result for backend.php to read.
+get_lan_ip() {
+  local output=""
+  if command -v ifconfig >/dev/null 2>&1; then
+    output="$(ifconfig 2>/dev/null || true)"
+  elif command -v ip >/dev/null 2>&1; then
+    output="$(ip -4 addr show 2>/dev/null || true)"
+  fi
+  [ -z "$output" ] && return 0
+  printf '%s\n' "$output" | awk '
+    BEGIN { best = -1; skip = 1 }
+    function set_iface(name) {
+      iface = tolower(name)
+      sub(/:$/, "", iface)
+      sub(/@.*/, "", iface)
+      skip = (iface == "lo" || iface ~ /^(rmnet|tun|wg|ppp|ccmni|pdp|clat|dummy|orichi|sit|ipsec)/)
+      score = 40
+      if (iface ~ /^(ap[0-9]*|softap[0-9]*)$/ || iface ~ /wlan[0-9]*_ap/) score = 100
+      else if (iface ~ /^wlan[0-9]+/) score = 90
+      else if (iface ~ /^(rndis|usb|eth|bnep)/) score = 70
+      else if (iface ~ /^vgate/) score = 20
+    }
+    /^[0-9]+:\s+/ { set_iface($2); next }
+    /^[A-Za-z0-9_.-]+/ { set_iface($1); next }
+    skip { next }
+    /inet / {
+      for (i = 1; i <= NF; i++) {
+        val = $i
+        sub(/^addr:/, "", val)
+        sub(/\/.*/, "", val)
+        split(val, o, ".")
+        if (o[1] == 10 || (o[1] == 172 && o[2] >= 16 && o[2] <= 31) || (o[1] == 192 && o[2] == 168)) {
+          if (val != "127.0.0.1" && val !~ /^169\.254\./ && val !~ /^172\.17\./ && val !~ /^192\.168\.56\./) {
+            if (score > best) { best = score; bestip = val }
+          }
+        }
+      }
+    }
+    END { if (bestip != "") print bestip }
+  '
+}
 
 echo "Preparing Termux/proot runtime..."
 
@@ -60,12 +123,20 @@ if [ ! -f "$ROOT_DIR/vendor/autoload.php" ]; then
   bash "$ROOT_DIR/install-termux.sh"
 fi
 
-echo "Starting PencariMovie Downloader with FrankenPHP through proot..."
+echo "Starting PencariMovie Server with FrankenPHP through proot..."
 echo "Log file: $LOG_FILE"
 
 # Use Unix-optimised php.ini (static build — no dynamic extension loading)
 if [ -f "$ROOT_DIR/bin/php.ini.unix" ]; then
   cp "$ROOT_DIR/bin/php.ini.unix" "$ROOT_DIR/bin/php.ini"
+fi
+
+LAN_IP="$(get_lan_ip || true)"
+mkdir -p "$ROOT_DIR/storage"
+if [ -n "${LAN_IP}" ]; then
+  printf '%s\n' "$LAN_IP" > "$ROOT_DIR/storage/lan_ip.txt"
+else
+  rm -f "$ROOT_DIR/storage/lan_ip.txt"
 fi
 
 # ----- Start FrankenPHP through proot -----
@@ -77,8 +148,8 @@ proot --link2symlink -0 \
   -b "$ROOT_DIR:$ROOT_DIR" \
   -b "$TMP_DIR:/tmp" \
   -b "$TMP_DIR/resolv.conf:/etc/resolv.conf" \
-  /bin/sh -c 'export PATH="$1/bin:$PATH"; export PHP_BINDIR="$1/bin"; export PHPRC="$1/bin"; exec "$2" php-server --listen "$3:$4" --root "$5"' \
-  sh "$ROOT_DIR" "$FRANKENPHP_BIN" "$HOST" "$PORT" "$ROOT_DIR" >>"$LOG_FILE" 2>&1 &
+  /bin/sh -c 'export PATH="$1/bin:$PATH"; export PHP_BINDIR="$1/bin"; export PHPRC="$1/bin"; export LAN_IP="$6"; exec "$2" php-server --listen "$3:$4" --root "$5"' \
+  sh "$ROOT_DIR" "$FRANKENPHP_BIN" "$HOST" "$PORT" "$ROOT_DIR" "${LAN_IP:-}" >>"$LOG_FILE" 2>&1 &
 PID="$!"
 
 echo "$PID" > "$PID_FILE" 2>/dev/null || true
@@ -92,6 +163,9 @@ if ! kill -0 "$PID" 2>/dev/null; then
 fi
 
 echo ""
-echo "PencariMovie Downloader is running"
+echo "PencariMovie Server is running"
 echo "  Local:    http://127.0.0.1:$PORT"
+if [ -n "${LAN_IP}" ]; then
+  echo "  Network:  http://$LAN_IP:$PORT"
+fi
 echo "PID: $PID"

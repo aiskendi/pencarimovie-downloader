@@ -353,27 +353,54 @@
           Stream movies, series from Telegram server directly in Nuvio
         </p>
 
-        <div class="settings-gate__field">
-          <label class="settings-gate__label" for="addonManifestInput">
-            Manifest URL
-          </label>
-          <input
-            type="text"
-            id="addonManifestInput"
-            class="settings-gate__input"
-            readonly
-            value=""
-          />
+        <!-- Wi-Fi / LAN Manifest Field (Recommended for External Devices) -->
+        <div class="settings-gate__field" id="addonLanField">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="settings-gate__label" for="addonManifestLanInput" style="margin-bottom: 0;">
+              📡 Wi-Fi / LAN Manifest (TV, Phone, Tablet)
+            </label>
+            <span style="font-size: 0.72rem; background: rgba(0, 210, 106, 0.15); color: #00d26a; padding: 2px 6px; border-radius: 6px; font-weight: 600;">Recommended</span>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <input
+              type="text"
+              id="addonManifestLanInput"
+              class="settings-gate__input"
+              style="color: #00d26a; font-family: monospace; font-size: 0.88rem;"
+              readonly
+              value=""
+            />
+            <button id="copyAddonManifestLanBtn" class="settings-gate__btn" style="white-space: nowrap; padding: 10px 16px; font-size: 0.88rem;">
+              📋 Copy
+            </button>
+          </div>
+        </div>
+
+        <!-- Localhost Manifest Field (This PC Only) -->
+        <div class="settings-gate__field" id="addonLocalField">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="settings-gate__label" for="addonManifestInput" style="margin-bottom: 0;">
+              💻 Localhost Manifest (This Device Only)
+            </label>
+            <span style="font-size: 0.72rem; background: rgba(255, 255, 255, 0.08); color: #aaa; padding: 2px 6px; border-radius: 6px; font-weight: 600;">Local</span>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <input
+              type="text"
+              id="addonManifestInput"
+              class="settings-gate__input"
+              style="color: #bbb; font-family: monospace; font-size: 0.88rem;"
+              readonly
+              value=""
+            />
+            <button id="copyAddonManifestBtn" class="settings-gate__btn" style="background: rgba(255,255,255,0.1); color: #ddd; white-space: nowrap; padding: 10px 16px; font-size: 0.88rem;">
+              📋 Copy
+            </button>
+          </div>
         </div>
 
         <div id="addonCopiedStatus" class="settings-gate__status ok hidden">
           ✓ Copied to clipboard!
-        </div>
-
-        <div class="settings-gate__actions">
-          <button id="copyAddonManifestBtn" class="settings-gate__btn">
-            📋 Copy Manifest URL
-          </button>
         </div>
 
         <div class="instructions" style="margin-top: 18px; text-align: left; background: rgba(0,0,0,0.3); padding: 14px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
@@ -381,9 +408,10 @@
             🚀 How to install in Nuvio:
           </div>
           <ol style="margin-left: 18px; color: #aaa; font-size: 0.82rem; line-height: 1.5;">
-            <li style="margin-bottom: 4px;">Open <strong>Nuvio</strong> app.</li>
+            <li style="margin-bottom: 4px;">Connect your Android TV, phone, or tablet to the <strong>same Wi-Fi network</strong>.</li>
+            <li style="margin-bottom: 4px;">Open the <strong>Nuvio</strong> app.</li>
             <li style="margin-bottom: 4px;">Go to <strong>profile</strong> &rarr; <strong>content & discovery</strong> &rarr; <strong>addons</strong>.</li>
-            <li>Paste Manifest URL and <strong>Install addon</strong>.</li>
+            <li>Paste the <strong>Wi-Fi / LAN Manifest URL</strong> and click <strong>Install addon</strong>.</li>
           </ol>
         </div>
       </div>

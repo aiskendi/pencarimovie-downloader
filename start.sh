@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+print_banner() {
+  [ -n "${PENCARIMOVIE_NO_BANNER:-}" ] && return 0
+  local orange="" reset=""
+  if [ -t 1 ]; then
+    orange="$(printf '\033[38;5;208m')"
+    reset="$(printf '\033[0m')"
+  fi
+  printf '%s' "$orange"
+  cat <<'EOF'
+
+ ========================================
+          PencariMovie Server
+ ========================================
+
+EOF
+  printf '%s' "$reset"
+}
+
+print_banner
+
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FRANKENPHP_BIN="$ROOT_DIR/bin/frankenphp"
 HOST="0.0.0.0"
@@ -35,7 +56,7 @@ print_urls() {
 }
 
 if [ -x "$FRANKENPHP_BIN" ]; then
-  echo "Starting PencariMovie Downloader with FrankenPHP..."
+  echo "Starting PencariMovie Server with FrankenPHP..."
   export PATH="$ROOT_DIR/bin:$PATH"
   export PHP_BINDIR="$ROOT_DIR/bin"
   export PHPRC="$ROOT_DIR/bin"
@@ -51,7 +72,7 @@ if ! command -v php >/dev/null 2>&1; then
   echo "Place FrankenPHP at $FRANKENPHP_BIN or install PHP in PATH."
   exit 1
 fi
-echo "Starting PencariMovie Downloader with PHP..."
+echo "Starting PencariMovie Server with PHP..."
 nohup php -S "$HOST:$PORT" "$ROOT_DIR/router.php" >/dev/null 2>&1 &
 echo $! > "$ROOT_DIR/.php-server.pid"
 print_urls

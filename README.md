@@ -58,6 +58,8 @@ The server includes a built‑in addon compatible with Stremio (and Nuvio). Once
 ARM64
 https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie_arm64-v8a.apk
 
+On every Start the APK checks GitHub `releases/latest`. If a newer tag exists it downloads `pencarimovie-downloader-linux-aarch64.tar.gz` and extracts it over the app folder, leaving `storage/` (bot session) in place.
+
 ### Termux (Android)
 
 The Google Play version of Termux will not work correctly. Install Termux from the official GitHub releases page instead: https://github.com/termux/termux-app/releases
@@ -76,6 +78,8 @@ bash pencarimovie-termux.sh --stop
 bash pencarimovie-termux.sh --restart
 ```
 
+On every start the installer checks GitHub `releases/latest`. If a newer tag exists it downloads that package and extracts it over the app folder, leaving `storage/` (bot session) in place.
+
 ### Windows
 
 ```powershell
@@ -87,6 +91,10 @@ Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/rele
 .\pencarimovie-windows.bat --stop    # Stop
 .\pencarimovie-windows.bat --restart # Restart
 ```
+
+On Windows the running server also adds a **system tray icon**. Double-click it to open the app, or right-click for **Open** / **Stop Server**.
+
+On every start the installer checks GitHub `releases/latest`. If a newer tag exists it downloads that package and extracts it over the app folder, leaving `storage/` (bot session) in place.
 
 ### Linux
 
@@ -100,6 +108,8 @@ bash pencarimovie-linux.sh --stop
 bash pencarimovie-linux.sh --restart
 ```
 
+On every start the installer checks GitHub `releases/latest`. If a newer tag exists it downloads that package and extracts it over the app folder, leaving `storage/` (bot session) in place.
+
 ### macOS (not yet tested)
 
 Choose the correct macOS package for your Mac:
@@ -108,7 +118,7 @@ Choose the correct macOS package for your Mac:
 - Intel Mac: `pencarimovie-downloader-mac-x86_64.tar.gz`
 
 ```bash
-mkdir pencarimovie-downloader && cd pencarimovie-downloader && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+mkdir pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 ```
 
 ### On Browser

@@ -15,6 +15,9 @@ Each package contains the same app code, but a different FrankenPHP runtime in `
 - `pencarimovie-downloader-mac-arm64.tar.gz`
 - `pencarimovie-downloader-mac-x86_64.tar.gz`
 - `pencarimovie-downloader-android-arm64.apk` — Standalone Android APK (no Termux required)
+- `pencarimovie-linux.sh` — Linux/macOS one-file installer (start-time OTA)
+- `pencarimovie-termux.sh` — Termux one-file installer (start-time OTA)
+- `pencarimovie-windows.bat` — Windows one-file installer (start-time OTA)
 
 ## Composer policy
 
@@ -48,6 +51,7 @@ dist\pencarimovie-downloader-windows-x86_64.zip
 
 - App files: `backend.php`, `index.php`, `router.php`, `composer.*`, `vendor/`
 - Scripts: `install.bat`, `start.bat`, `stop.bat`, `restart.bat` (`.bat` only — no `.sh`)
+- Tray: `tray.ps1`, `tray.ico`, `tray.png`, `start-hidden.ps1` (system-tray helper launched by `start.bat`)
 - Runtime: `bin/frankenphp.exe`, `bin/php.exe`, all required Windows DLLs, Windows `php.ini`
 - Frontend: `public/`
 - Config: `storage/`
@@ -114,9 +118,14 @@ The `index.php` FrankenPHP entrypoint (which loads `backend.php`) is included in
 3. The script produces every release archive automatically:
    - **Windows**: Extracts `bin/` from `frankenphp-windows-x86_64.zip`, copies `.bat` scripts only
    - **Unix**: Renames `php.ini.unix` → `php.ini`, copies `bin/php`, copies `.sh` scripts only
-4. Upload all files from `dist/` to a GitHub Release.
+   - **Installers**: copies `pencarimovie-linux.sh`, `pencarimovie-termux.sh`, and `pencarimovie-windows.bat` into `dist/` as extra assets
+4. Upload all files from `dist/` to a GitHub Release, including the three one-file installers.
 
 End users should download only the package matching their OS and CPU.
+
+## Start-time OTA
+
+The one-file installers and the Android APK [`NativeRunner.kt`](android/termux-app-fork/app/main/java/com/pencarimovie/downloader/NativeRunner.kt) check `https://github.com/aiskendi/pencarimovie-downloader/releases/latest` on every start. If the tag is newer than `pencarimovie-server/.release-tag`, they download the matching OS/CPU package (APK uses `pencarimovie-downloader-linux-aarch64.tar.gz`, or `linux-x86_64` on x86_64 emulators) and extract it over the app folder, leaving `storage/` in place. Existing installs without a stamp are treated as `v1.0.0`. Offline / GitHub failure keeps the installed copy. Do not add in-app `POST /api/update`.
 
 ## Android APK
 

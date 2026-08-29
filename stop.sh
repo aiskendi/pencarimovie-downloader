@@ -5,7 +5,7 @@ HOST="0.0.0.0"
 PORT="8088"
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "Stopping PencariMovie Downloader on $HOST:$PORT..."
+echo "Stopping PencariMovie Server on $HOST:$PORT..."
 
 for PID_FILE in "$ROOT_DIR/.frankenphp.pid" "$ROOT_DIR/.php-server.pid"; do
   if [ -f "$PID_FILE" ]; then

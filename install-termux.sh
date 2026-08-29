@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 
-echo "Installing Termux helpers for PencariMovie Downloader..."
+echo "Installing Termux helpers for PencariMovie Server..."
 
 if ! command -v proot >/dev/null 2>&1; then
   if command -v pkg >/dev/null 2>&1; then

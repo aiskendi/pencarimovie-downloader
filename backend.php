@@ -22,6 +22,28 @@ if (!isset($_GET['MadelineSelfRestart'])) {
  * They are fetched from the WordPress REST API endpoint (/save-bot-token)
  * after successful bot token validation, encrypted with the token as key.
  */
+function fd_is_temp_app_dir(?string $dir): bool
+{
+    if ($dir === null || $dir === '') {
+        return true;
+    }
+    $real = realpath($dir) ?: $dir;
+    $tempDir = realpath(sys_get_temp_dir());
+    if ($tempDir !== false && str_starts_with($real, $tempDir)) {
+        return true;
+    }
+    return str_contains($real, 'frankenphp_');
+}
+
+function fd_storage_has_session(string $storageDir): bool
+{
+    $session = $storageDir . DIRECTORY_SEPARATOR . 'session.madeline';
+    return is_dir($session)
+        || is_file($session)
+        || is_file($storageDir . DIRECTORY_SEPARATOR . 'bot_id.txt')
+        || is_file($storageDir . DIRECTORY_SEPARATOR . 'session_meta.json');
+}
+
 function fd_get_storage_dir(): string
 {
     static $storageDir = null;
@@ -29,18 +51,57 @@ function fd_get_storage_dir(): string
         return $storageDir;
     }
 
+    // Prefer the served project root, not __DIR__.
+    // FrankenPHP can extract PHP into a temp folder, so __DIR__/storage
+    // would lose the Madeline session on restart / next worker.
+    $candidates = [];
+    $docRoot = (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
+    if ($docRoot !== '') {
+        $candidates[] = rtrim($docRoot, '/\\') . DIRECTORY_SEPARATOR . 'storage';
+    }
     $cwd = getcwd();
     if ($cwd !== false) {
-        $cwdStorage = $cwd . DIRECTORY_SEPARATOR . 'storage';
-        if (is_dir($cwdStorage) && is_writable($cwdStorage)) {
-            return $storageDir = $cwdStorage;
+        $candidates[] = $cwd . DIRECTORY_SEPARATOR . 'storage';
+    }
+    $script = (string) ($_SERVER['SCRIPT_FILENAME'] ?? '');
+    if ($script !== '') {
+        $candidates[] = dirname($script) . DIRECTORY_SEPARATOR . 'storage';
+    }
+
+    $unique = [];
+    foreach ($candidates as $candidate) {
+        if ($candidate === '' || fd_is_temp_app_dir(dirname($candidate))) {
+            continue;
         }
-        if (!file_exists($cwdStorage) && is_writable($cwd)) {
-            return $storageDir = $cwdStorage;
+        $unique[$candidate] = true;
+    }
+    $candidates = array_keys($unique);
+
+    foreach ($candidates as $candidate) {
+        if (is_dir($candidate) && is_writable($candidate) && fd_storage_has_session($candidate)) {
+            return $storageDir = $candidate;
+        }
+    }
+
+    foreach ($candidates as $candidate) {
+        if (is_dir($candidate) && is_writable($candidate)) {
+            return $storageDir = $candidate;
+        }
+        $parent = dirname($candidate);
+        if (!file_exists($candidate) && is_dir($parent) && is_writable($parent)) {
+            return $storageDir = $candidate;
         }
     }
 
     $appStorage = __DIR__ . DIRECTORY_SEPARATOR . 'storage';
+    if (!fd_is_temp_app_dir(__DIR__) && is_dir($appStorage) && is_writable($appStorage)) {
+        return $storageDir = $appStorage;
+    }
+
+    if ($candidates !== []) {
+        return $storageDir = $candidates[0];
+    }
+
     return $storageDir = $appStorage;
 }
 
@@ -69,12 +130,11 @@ function fd_storage_path(string $file): string
 define('FD_SESSION_PATH', fd_storage_path('storage/session.madeline'));
 define('FD_WP_API_BASE', 'https://pencarimovie.com/wp-json/fastdownloader/v1');
 define('FD_WP_AJAX_URL', 'https://pencarimovie.com/wp-admin/admin-ajax.php');
-define('FD_APP_VERSION', '1.0.0');
-define('FD_VERSION_CACHE_PATH', fd_storage_path('storage/version_check.json'));
-define('FD_VERSION_CACHE_TTL', 3600);
+define('FD_APP_VERSION', '0.9.0');
 define('FD_WP_VERSION_URL', FD_WP_API_BASE . '/version');
 define('FD_API_SECRET_PATH', fd_storage_path('storage/api_secret.key'));
 define('FD_BOT_ID_CACHE_PATH', fd_storage_path('storage/bot_id.txt'));
+define('FD_SESSION_META_PATH', fd_storage_path('storage/session_meta.json'));
 
 /**
  * Optional DNS resolution mapping for curl (e.g. "example.com:443:1.2.3.4").
@@ -152,9 +212,16 @@ function fd_clear_api_secret(): void
 
 /**
  * Get the cached Bot ID (avoids booting full MadelineProto on lightweight requests).
+ * Source of truth is session_meta.json. bot_id.txt is a legacy fallback only.
  */
 function fd_get_bot_id(): string
 {
+    $meta = fd_load_session_meta();
+    $fromMeta = trim((string) ($meta['bot_id'] ?? ''));
+    if ($fromMeta !== '') {
+        return $fromMeta;
+    }
+
     $path = FD_BOT_ID_CACHE_PATH;
     if (is_file($path)) {
         $val = trim((string) file_get_contents($path));
@@ -166,28 +233,56 @@ function fd_get_bot_id(): string
 }
 
 /**
- * Cache the Bot ID to disk.
- */
-function fd_save_bot_id(string $botId): void
-{
-    $path = FD_BOT_ID_CACHE_PATH;
-    $dir = dirname($path);
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0777, true);
-    }
-    if ($botId !== '') {
-        @file_put_contents($path, $botId, LOCK_EX);
-    }
-}
-
-/**
- * Clear the cached Bot ID.
+ * Clear leftover bot_id.txt from older installs.
  */
 function fd_clear_bot_id(): void
 {
     $path = FD_BOT_ID_CACHE_PATH;
     if (is_file($path)) {
         @unlink($path);
+    }
+}
+
+function fd_has_local_session(): bool
+{
+    // Session files alone are enough. Missing bot_id.txt (old APK / partial
+    // write) must not look like a logout after refresh.
+    return is_file(FD_SESSION_PATH) || is_dir(FD_SESSION_PATH);
+}
+
+function fd_load_session_meta(): array
+{
+    $path = FD_SESSION_META_PATH;
+    if (!is_file($path)) {
+        return [];
+    }
+    $data = @json_decode((string) @file_get_contents($path), true);
+    return is_array($data) ? $data : [];
+}
+
+function fd_save_session_meta(string $botId, string $botUsername = '', string $botName = ''): void
+{
+    $dir = dirname(FD_SESSION_META_PATH);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    @file_put_contents(
+        FD_SESSION_META_PATH,
+        json_encode([
+            'bot_id' => $botId,
+            'bot_username' => $botUsername,
+            'bot_name' => $botName,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        LOCK_EX
+    );
+    // Remove the old one-line cache so bot identity lives in one file.
+    fd_clear_bot_id();
+}
+
+function fd_clear_session_meta(): void
+{
+    if (is_file(FD_SESSION_META_PATH)) {
+        @unlink(FD_SESSION_META_PATH);
     }
 }
 
@@ -265,7 +360,10 @@ function fd_http_json(string $url, array $payload = [], string $method = 'GET', 
     }
 
     // Build header array
-    $headers = ['Accept: application/json'];
+    $headers = [
+        'Accept: application/json',
+        'X-App-Version: ' . FD_APP_VERSION,
+    ];
 
     // Add API secret header for authenticating with WordPress endpoints
     $apiSecret = fd_get_api_secret();
@@ -312,6 +410,18 @@ function fd_http_get_contents(string $url, array $options = []): string|false
     $body = $options['body'] ?? '';
     $timeout = (int) ($options['timeout'] ?? 15);
 
+    // Ensure X-App-Version header is sent on all requests
+    $hasVersionHeader = false;
+    foreach ($headers as $h) {
+        if (stripos($h, 'X-App-Version:') === 0) {
+            $hasVersionHeader = true;
+            break;
+        }
+    }
+    if (!$hasVersionHeader) {
+        $headers[] = 'X-App-Version: ' . FD_APP_VERSION;
+    }
+
     // Prefer curl — it has reliable SSL handling on Windows PHP 8.5
     if (function_exists('curl_version')) {
         $ch = curl_init();
@@ -325,6 +435,18 @@ function fd_http_get_contents(string $url, array $options = []): string|false
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_HEADERFUNCTION => function ($curl, $headerLine) {
+                $len = strlen($headerLine);
+                $parts = explode(':', $headerLine, 2);
+                if (count($parts) === 2) {
+                    $name = strtolower(trim($parts[0]));
+                    $val = trim($parts[1]);
+                    if ($name === 'x-min-version' || $name === 'x-update-url' || $name === 'x-update-required') {
+                        fd_update_version_state([$name => $val]);
+                    }
+                }
+                return $len;
+            },
         ];
 
         // Optional custom DNS resolution via CURLOPT_RESOLVE
@@ -396,7 +518,25 @@ function fd_http_get_contents(string $url, array $options = []): string|false
         ]);
     }
 
-    return @file_get_contents($url, false, $ctx);
+    $res = @file_get_contents($url, false, $ctx);
+    $responseHeaders = function_exists('http_get_last_response_headers')
+        ? (http_get_last_response_headers() ?? [])
+        : ($GLOBALS['http_response_header'] ?? []);
+
+    if (is_array($responseHeaders)) {
+        foreach ($responseHeaders as $line) {
+            $parts = explode(':', $line, 2);
+            if (count($parts) === 2) {
+                $name = strtolower(trim($parts[0]));
+                $val = trim($parts[1]);
+                if ($name === 'x-min-version' || $name === 'x-update-url' || $name === 'x-update-required') {
+                    fd_update_version_state([$name => $val]);
+                }
+            }
+        }
+    }
+
+    return $res;
 }
 
 function fd_resolve_shortcode(string $shortCode, string $botId = ''): array
@@ -756,7 +896,11 @@ function fd_boot_madeline(?string $botToken = null, array $overrides = []): arra
                 try {
                     $self = $madeline->getSelf();
                     if ($self && !empty($self['id'])) {
-                        fd_save_bot_id((string) $self['id']);
+                        fd_save_session_meta(
+                            (string) $self['id'],
+                            (string) ($self['username'] ?? ''),
+                            (string) ($self['first_name'] ?? '')
+                        );
                         fd_log('session resumed', [
                             'bot_id' => $self['id'],
                             'elapsed_ms' => round((microtime(true) - $t0) * 1000),
@@ -788,7 +932,11 @@ function fd_boot_madeline(?string $botToken = null, array $overrides = []): arra
                 fd_log('getSelf after login', ['ms' => round(($t4 - $t3) * 1000)]);
 
                 if ($self && !empty($self['id'])) {
-                    fd_save_bot_id((string) $self['id']);
+                    fd_save_session_meta(
+                        (string) $self['id'],
+                        (string) ($self['username'] ?? ''),
+                        (string) ($self['first_name'] ?? '')
+                    );
                     while (ob_get_level() > $bootObLevel) {
                         ob_end_clean();
                     }
@@ -943,6 +1091,7 @@ function fd_clear_session(): void
     // Clear the stored API secret — forces fresh secret on next login
     fd_clear_api_secret();
     fd_clear_bot_id();
+    fd_clear_session_meta();
 }
 
 /**
@@ -955,64 +1104,74 @@ function fd_clear_session(): void
  *
  * @return array{ok:bool,update_needed:bool,current_version:string,minimum_version:string,update_url:string,release_notes:string}
  */
+/**
+ * In-memory version state updated from response headers during requests.
+ */
+function fd_update_version_state(array $headers): void
+{
+    global $fd_version_state;
+    if (!is_array($fd_version_state)) {
+        $fd_version_state = [
+            'min_version' => '',
+            'update_url' => '',
+            'update_required' => false,
+        ];
+    }
+    if (isset($headers['x-min-version'])) {
+        $fd_version_state['min_version'] = (string) $headers['x-min-version'];
+    }
+    if (isset($headers['x-update-url'])) {
+        $fd_version_state['update_url'] = (string) $headers['x-update-url'];
+    }
+    if (isset($headers['x-update-required'])) {
+        $fd_version_state['update_required'] = (string) $headers['x-update-required'] === '1';
+    }
+}
+
+/**
+ * Check the application version against the WordPress minimum required version.
+ *
+ * Uses the in-memory response header state captured on live HTTP requests,
+ * with a fallback to the /version endpoint if not yet initialized.
+ *
+ * @return array{ok:bool,update_needed:bool,current_version:string,minimum_version:string,update_url:string,release_notes:string}
+ */
 function fd_check_version(): array
 {
-    $cachePath = FD_VERSION_CACHE_PATH;
+    global $fd_version_state;
 
-    // Try loading from cache first to avoid hitting WordPress on every request
-    if (is_file($cachePath)) {
-        $cached = @json_decode((string) file_get_contents($cachePath), true);
-        if (is_array($cached) && !empty($cached['ok']) && !empty($cached['cached_at'])) {
-            $age = time() - (int) $cached['cached_at'];
-            if ($age < FD_VERSION_CACHE_TTL) {
-                return $cached;
-            }
+    $current = FD_APP_VERSION;
+
+    // If we haven't received version headers yet from a previous request, fetch once
+    if (empty($fd_version_state['min_version'])) {
+        $response = fd_http_json(FD_WP_VERSION_URL, [], 'GET', 3);
+        if (!empty($response['ok']) && !empty($response['min_version'])) {
+            $minVersion = (string) $response['min_version'];
+            $updateUrl = (string) ($response['update_url'] ?? '');
+            $updateNeeded = $minVersion !== '' && version_compare($current, $minVersion, '<');
+            return [
+                'ok' => true,
+                'update_needed' => $updateNeeded,
+                'current_version' => $current,
+                'minimum_version' => $minVersion,
+                'update_url' => $updateUrl,
+                'release_notes' => (string) ($response['release_notes'] ?? ''),
+            ];
         }
     }
 
-    // Safe default returned on fetch failure
-    $default = [
-        'ok' => true,
-        'update_needed' => false,
-        'current_version' => FD_APP_VERSION,
-        'minimum_version' => '',
-        'update_url' => '',
-        'release_notes' => '',
-    ];
+    $minVersion = (string) ($fd_version_state['min_version'] ?? '');
+    $updateUrl = (string) ($fd_version_state['update_url'] ?? '');
+    $updateNeeded = !empty($fd_version_state['update_required']) || ($minVersion !== '' && version_compare($current, $minVersion, '<'));
 
-    // Fetch version info from WordPress (short timeout — fail fast on mobile/Termux)
-    $response = fd_http_json(FD_WP_VERSION_URL, [], 'GET', 3);
-    if (empty($response['ok']) || empty($response['min_version'])) {
-        fd_log('version check failed — wordpress unreachable or invalid response');
-        return $default;
-    }
-
-    $minVersion = (string) $response['min_version'];
-    $updateUrl = (string) ($response['update_url'] ?? '');
-    $releaseNotes = (string) ($response['release_notes'] ?? '');
-    $current = FD_APP_VERSION;
-
-    // Compare using PHP's version_compare (handles semver like "0.1.0" vs "0.2.0")
-    $updateNeeded = $minVersion !== '' && version_compare($current, $minVersion, '<');
-
-    $result = [
+    return [
         'ok' => true,
         'update_needed' => $updateNeeded,
         'current_version' => $current,
         'minimum_version' => $minVersion,
         'update_url' => $updateUrl,
-        'release_notes' => $releaseNotes,
-        'cached_at' => time(),
+        'release_notes' => '',
     ];
-
-    // Persist cache for next request
-    $cacheDir = dirname($cachePath);
-    if (!is_dir($cacheDir)) {
-        @mkdir($cacheDir, 0777, true);
-    }
-    @file_put_contents($cachePath, json_encode($result, JSON_UNESCAPED_SLASHES), LOCK_EX);
-
-    return $result;
 }
 
 // ─── Stremio & Nuvio Helpers ─────────────────────────────────────────────────
@@ -1086,10 +1245,13 @@ function fd_classify_season_episode(string $title, int $seasonNum = 0, int $epis
         $season = (int) $m[1];
         $episode = (int) $m[2];
     }
-    // 3. Part / Vol / Cour followed by season and episode (e.g. Part 3.01, Vol 2 - 05)
-    elseif (preg_match('/(?:^|[^a-z0-9])(?:PART|VOL|VOLUME|COUR)\s*[ ._-]*0*(\d{1,2})[ ._-]+0*(\d{1,4})(?=[ ._\-\]\)]|$)/i', $title, $m)) {
-        $season = (int) $m[1];
-        $episode = (int) $m[2];
+    // 3. Part / Vol / Cour followed by season and episode (e.g. Part 3.01, Vol 2 - 05, Part 1 E27)
+    elseif (preg_match('/(?:^|[^a-z0-9])(?:PART|VOL|VOLUME|COUR)\s*[ ._-]*0*(\d{1,2})[ ._-]+(?:E(?:P|PS|PISODE)?\s*[ ._-]*)?0*(\d{1,4})(?=[ ._\-\]\)]|$)/i', $title, $m)) {
+        $n2 = (int) $m[2];
+        if ($n2 < 1900 || $n2 > 2100) {
+            $season = (int) $m[1];
+            $episode = $n2;
+        }
     }
 
     // 4. Season / Musim / Part / Cour / Vol keywords
@@ -1145,15 +1307,17 @@ function fd_classify_season_episode(string $title, int $seasonNum = 0, int $epis
         }
     }
 
-    // 6. Bare numbers without E/EP prefix (e.g. Flying.Up.Without.Disturb.32.480p.mp4, Title.06.720p.mp4, Title - 05.mkv)
+    // 8. Bare numbers without E/EP prefix (e.g. Flying.Up.Without.Disturb.32.480p.mp4, Title.06.720p.mp4, Title - 05.mkv)
     if ($episode === 0) {
         $clean = preg_replace('/\.(mp4|mkv|avi|mov|ts|flv|webm)$/i', '', $title);
-        if (preg_match('/[ ._\[\(-](\d{1,3})[ ._\]\)-]+(?:2160p|1080p|720p|480p|360p|4k|uhd|fhd|hd|sd|web|bluray|hdtv|malaysub|end|final|x264|x265|hevc|aac)/i', $clean, $m)) {
+        // Strip 4-digit release years (1900-2099) so they don't get misidentified as bare episode numbers
+        $cleanWithoutYears = (string) preg_replace('/\b(?:19|20)\d{2}\b/', ' ', $clean);
+        if (preg_match('/[ ._\[\(-](\d{1,3})[ ._\]\)-]+(?:2160p|1080p|720p|480p|360p|4k|uhd|fhd|hd|sd|web|bluray|hdtv|malaysub|end|final|x264|x265|hevc|aac)/i', $cleanWithoutYears, $m)) {
             $n = (int) $m[1];
             if ($n > 0 && ($n < 1900 || $n > 2100)) {
                 $episode = $n;
             }
-        } elseif (preg_match('/[ ._\[\(-](\d{1,3})[ ._\]\)]*$/', $clean, $m)) {
+        } elseif (preg_match('/[ ._\[\(-](\d{1,3})[ ._\]\)]*$/', $cleanWithoutYears, $m)) {
             $n = (int) $m[1];
             if ($n > 0 && ($n < 1900 || $n > 2100)) {
                 $episode = $n;
@@ -1163,7 +1327,10 @@ function fd_classify_season_episode(string $title, int $seasonNum = 0, int $epis
 
     // Fallbacks to DB media-rank columns if not found in title
     if ($season === 0 && $seasonNum > 0) {
-        $season = $seasonNum;
+        // Only trust DB season if title didn't find a conflicting uncorroborated episode
+        if ($episode === 0 || $episodeNum === $episode) {
+            $season = $seasonNum;
+        }
     }
     if ($episode === 0 && $episodeNum > 0) {
         $episode = $episodeNum;
@@ -1178,21 +1345,22 @@ function fd_classify_season_episode(string $title, int $seasonNum = 0, int $epis
 
 function fd_file_matches_episode(array $parsed, int $targetSeason, int $targetEpisode): bool
 {
-    $s = $parsed['season'];
-    $e = $parsed['episode'];
-    $eEnd = $parsed['episode_end'] ?? 0;
+    $s = (int) ($parsed['season'] ?? 0);
+    $e = (int) ($parsed['episode'] ?? 0);
+    $eEnd = (int) ($parsed['episode_end'] ?? 0);
 
     if ($s !== $targetSeason) {
         return false;
     }
 
-    if ($eEnd > 0 && $eEnd >= $e) {
+    // Combined pack (E01-E14): keep it on episodes inside the range.
+    if ($e > 0 && $eEnd >= $e) {
         return $targetEpisode >= $e && $targetEpisode <= $eEnd;
     }
 
-    // If episode is 0 (unclassified/telefilm), it only matches episode 1 if targetEpisode is 1
-    if ($e === 0) {
-        return $targetEpisode === 1;
+    // Unclassified / E0 files must not leak onto episode 1.
+    if ($e <= 0) {
+        return false;
     }
 
     return $e === $targetEpisode;
@@ -1232,36 +1400,592 @@ function fd_fetch_stream_ajax(string $action, array $params = []): array
     }
 }
 
+/**
+ * Page post_files through Manticore OPTION scroll instead of one 5000-row dump.
+ * Each WP request is a small page; we stop at $maxFiles or when a page is short.
+ *
+ * Optional $opts['until_unique_episodes'] keeps one file per S/E and keeps
+ * paging past quality-duplicate pages so earlier seasons are not truncated.
+ */
+function fd_fetch_post_files_paged(int $postId, array $opts = []): array
+{
+    $pageSize = max(1, min((int) ($opts['page_size'] ?? 100), 200));
+    $maxFiles = max($pageSize, (int) ($opts['max_files'] ?? 300));
+    $season = max(0, (int) ($opts['season'] ?? 0));
+    $episode = max(0, (int) ($opts['episode'] ?? 0));
+    $search = trim((string) ($opts['search'] ?? ''));
+    $filter = $opts['filter'] ?? null;
+    $untilUnique = !empty($opts['until_unique_episodes']);
+    $maxUnique = max(1, (int) ($opts['max_unique_episodes'] ?? 400));
+    $limit = $untilUnique ? $maxUnique : $maxFiles;
+    $defaultPages = $untilUnique ? 8 : ((int) ceil($maxFiles / $pageSize) + 2);
+    $maxPages = max(1, (int) ($opts['max_pages'] ?? $defaultPages));
+    $staleLimit = max(1, (int) ($opts['stale_pages'] ?? ($untilUnique ? 4 : 2)));
+
+    $all = [];
+    $seen = [];
+    $seenEps = [];
+    $stalePages = 0;
+    $offset = 0;
+
+    for ($page = 0; $page < $maxPages; $page++) {
+        if ($search !== '') {
+            $params = [
+                'search' => $search,
+                'limit' => $pageSize,
+                'offset' => $offset,
+            ];
+            $res = fd_fetch_stream_ajax('search_files', $params);
+        } else {
+            $params = [
+                'post_id' => $postId,
+                'limit' => $pageSize,
+                'offset' => $offset,
+            ];
+            if ($season > 0) {
+                $params['season'] = $season;
+            }
+            if ($episode > 0) {
+                $params['episode'] = $episode;
+            }
+            $res = fd_fetch_stream_ajax('post_files', $params);
+        }
+        $files = (array) ($res['files'] ?? []);
+        if ($files === []) {
+            break;
+        }
+
+        $newEpsThisPage = 0;
+        foreach ($files as $file) {
+            $code = (string) ($file['short_code'] ?? '');
+            if ($code === '' || isset($seen[$code])) {
+                continue;
+            }
+            if (is_callable($filter) && !$filter($file)) {
+                continue;
+            }
+
+            if ($untilUnique) {
+                $parsed = fd_classify_season_episode(
+                    (string) ($file['title'] ?? ''),
+                    (int) ($file['season_num'] ?? 0),
+                    (int) ($file['episode_num'] ?? 0),
+                    (string) ($file['caption'] ?? '')
+                );
+                $epKey = $parsed['season'] . '_' . $parsed['episode'];
+                if (isset($seenEps[$epKey])) {
+                    $seen[$code] = true;
+                    continue;
+                }
+                $seenEps[$epKey] = true;
+                $newEpsThisPage++;
+            }
+
+            $seen[$code] = true;
+            $all[] = $file;
+
+            if (count($all) >= $limit) {
+                return $all;
+            }
+        }
+
+        if ($untilUnique) {
+            if ($newEpsThisPage === 0) {
+                $stalePages++;
+            } else {
+                $stalePages = 0;
+            }
+            if ($stalePages >= $staleLimit) {
+                break;
+            }
+        }
+
+        $returned = count($files);
+        $hasMore = !empty($res['has_more']) || $returned >= $pageSize;
+        if (!$hasMore) {
+            break;
+        }
+        $offset += $pageSize;
+    }
+
+    return $all;
+}
+
+/**
+ * One representative file for an exact SxxExx hit.
+ * Live WP MATCH only appends SxxExx when both season and episode are set.
+ */
+function fd_fetch_one_episode_file(int $postId, int $season, int $episode): ?array
+{
+    if ($season <= 0 || $episode <= 0) {
+        return null;
+    }
+
+    $res = fd_fetch_stream_ajax('post_files', [
+        'post_id' => $postId,
+        'limit' => 8,
+        'offset' => 0,
+        'season' => $season,
+        'episode' => $episode,
+    ]);
+
+    foreach ((array) ($res['files'] ?? []) as $file) {
+        $parsed = fd_classify_season_episode(
+            (string) ($file['title'] ?? ''),
+            (int) ($file['season_num'] ?? 0),
+            (int) ($file['episode_num'] ?? 0),
+            (string) ($file['caption'] ?? '')
+        );
+        if ((int) $parsed['season'] === $season && (int) $parsed['episode'] === $episode) {
+            return $file;
+        }
+    }
+
+    return null;
+}
+
+function fd_stream_keyword_from_post_title(string $title): string
+{
+    $keyword = trim((string) preg_replace('/[\x00-\x1F]+/u', ' ', $title));
+    $keyword = trim((string) preg_replace('/\s*[•·]\s*.+$/u', '', $keyword));
+    $keyword = trim((string) preg_replace('/\s*\(\d{4}\)\s*$/u', '', $keyword));
+    $keyword = trim((string) preg_replace('/\s+\d{4}\s*$/u', '', $keyword));
+    $keyword = trim((string) preg_replace('/\b(?:tvseries|tv\s*series)\b/iu', '', $keyword));
+    return trim((string) preg_replace('/\s+/', ' ', $keyword));
+}
+
+/**
+ * Generate search keyword variants for a title (handling apostrophe-s vs s vs omitted s, e.g. "Princess's" vs "Princess's" vs "Princess s" vs "Princess").
+ */
+function fd_stream_keyword_variants(string $keyword): array
+{
+    $variants = [$keyword];
+
+    // 1. Replace apostrophe with space ("Princess's" -> "Princess s", "Grey's" -> "Grey s")
+    $withSpace = trim((string) preg_replace("/['’`]/u", ' ', $keyword));
+    $withSpace = trim((string) preg_replace('/\s+/', ' ', $withSpace));
+    if ($withSpace !== '' && $withSpace !== $keyword) {
+        $variants[] = $withSpace;
+    }
+
+    // 2. Remove apostrophe completely ("Princess's" -> "Princesss", "Grey's" -> "Greys")
+    $noApos = trim((string) preg_replace("/['’`]/u", '', $keyword));
+    $noApos = trim((string) preg_replace('/\s+/', ' ', $noApos));
+    if ($noApos !== '' && !in_array($noApos, $variants, true)) {
+        $variants[] = $noApos;
+    }
+
+    // 3. Remove 's / s' possessive altogether ("Princess's" -> "Princess", "Grey's" -> "Grey")
+    $noPossessive = trim((string) preg_replace("/(?:['’`]s|s['’`]|\\bs\\b)/iu", '', $keyword));
+    $noPossessive = trim((string) preg_replace('/\s+/', ' ', $noPossessive));
+    if ($noPossessive !== '' && !in_array($noPossessive, $variants, true)) {
+        $variants[] = $noPossessive;
+    }
+
+    return array_values(array_unique($variants));
+}
+
+function fd_episode_stream_filter(int $season, int $episode): callable
+{
+    return static function (array $pf) use ($season, $episode): bool {
+        if (empty($pf['short_code'])) {
+            return false;
+        }
+        $parsed = fd_classify_season_episode(
+            (string) ($pf['title'] ?? ''),
+            (int) ($pf['season_num'] ?? 0),
+            (int) ($pf['episode_num'] ?? 0),
+            (string) ($pf['caption'] ?? '')
+        );
+        return fd_file_matches_episode($parsed, $season, $episode);
+    };
+}
+
+/**
+ * Playable files for one series episode only.
+ * SxxExx MATCH misses E01-style names; search_files backfills those.
+ * Never dump mixed/unfiltered post files onto an episode page.
+ */
+function fd_fetch_episode_stream_files(int $postId, int $season, int $episode, int $maxFiles = 40): array
+{
+    if ($postId <= 0 || $season <= 0 || $episode <= 0) {
+        return [];
+    }
+
+    $filter = fd_episode_stream_filter($season, $episode);
+    $all = [];
+    $seen = [];
+    $add = static function (array $files) use (&$all, &$seen, $filter, $maxFiles): void {
+        foreach ($files as $file) {
+            if (count($all) >= $maxFiles) {
+                return;
+            }
+            $code = (string) ($file['short_code'] ?? '');
+            if ($code === '' || isset($seen[$code])) {
+                continue;
+            }
+            if (!$filter($file)) {
+                continue;
+            }
+            $seen[$code] = true;
+            $all[] = $file;
+        }
+    };
+
+    // 1. First probe post files using exact season & episode parameters (fast MATCH)
+    $add(fd_fetch_post_files_paged($postId, [
+        'page_size' => 50,
+        'max_files' => $maxFiles,
+        'season' => $season,
+        'episode' => $episode,
+        'filter' => $filter,
+        'max_pages' => 2,
+    ]));
+
+    // 2. Scan all files in the post up to 1000 items with the episode filter
+    // (covers posts where episodes lack Sxx or have custom tags like E01 / Ep.1 / nunadrama)
+    if (count($all) < $maxFiles) {
+        $add(fd_fetch_post_files_paged($postId, [
+            'page_size' => 100,
+            'max_files' => 1000,
+            'max_pages' => 10,
+            'filter' => $filter,
+        ]));
+    }
+
+    // 3. If still needed, probe search_files by title keywords
+    if (count($all) < $maxFiles) {
+        $postData = fd_fetch_stream_ajax('get_post', ['post_id' => $postId]);
+        $post = !empty($postData) && is_array($postData) ? ($postData[0] ?? $postData) : [];
+        $keyword = fd_stream_keyword_from_post_title((string) ($post['title'] ?? ''));
+
+        if ($keyword !== '') {
+            $kwVariants = fd_stream_keyword_variants($keyword);
+            $queries = [];
+            foreach ($kwVariants as $kwVar) {
+                $queries[] = sprintf('%s S%02dE%02d', $kwVar, $season, $episode);
+                $queries[] = sprintf('%s E%02d', $kwVar, $episode);
+                $queries[] = sprintf('%s EP%02d', $kwVar, $episode);
+                if ($episode < 10) {
+                    $queries[] = sprintf('%s E%d', $kwVar, $episode);
+                }
+            }
+
+            foreach (array_values(array_unique($queries)) as $query) {
+                if (count($all) >= $maxFiles) {
+                    break;
+                }
+                $res = fd_fetch_stream_ajax('search_files', [
+                    'search' => $query,
+                    'limit' => 50,
+                    'offset' => 0,
+                ]);
+                $add((array) ($res['files'] ?? []));
+            }
+        }
+    }
+
+    return $all;
+}
+
+/**
+ * Build a series episode file list without dumping thousands of quality
+ * variants. Scans post_files with until_unique_episodes to discover all
+ * distinct seasons and episodes.
+ */
+function fd_fetch_series_episode_files(int $postId): array
+{
+    return fd_fetch_post_files_paged($postId, [
+        'page_size' => 100,
+        'max_files' => 1000,
+        'max_pages' => 10,
+        'until_unique_episodes' => true,
+        'max_unique_episodes' => 500,
+    ]);
+}
+
+function fd_is_usable_lan_ipv4(string $ip): bool
+{
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        return false;
+    }
+    // Never treat loopback, link-local, Docker, or VirtualBox host-only as LAN.
+    if (
+        str_starts_with($ip, '127.') ||
+        str_starts_with($ip, '169.254.') ||
+        str_starts_with($ip, '172.17.') ||
+        str_starts_with($ip, '192.168.56.') ||
+        $ip === '0.0.0.0'
+    ) {
+        return false;
+    }
+    $parts = array_map('intval', explode('.', $ip));
+    $a = $parts[0] ?? 0;
+    $b = $parts[1] ?? 0;
+    // RFC1918 only — public/ISP addresses (e.g. rmnet 21.x) are not LAN.
+    if ($a === 10) {
+        return true;
+    }
+    if ($a === 172 && $b >= 16 && $b <= 31) {
+        return true;
+    }
+    if ($a === 192 && $b === 168) {
+        return true;
+    }
+    return false;
+}
+
+function fd_is_skipped_lan_iface(string $iface): bool
+{
+    $iface = strtolower($iface);
+    if ($iface === 'lo' || $iface === 'lo0') {
+        return true;
+    }
+    $prefixes = [
+        'rmnet',
+        'ccmni',
+        'pdp',
+        'ccinet',
+        'clat',
+        'dummy',
+        'docker',
+        'br-',
+        'veth',
+        'cni',
+        'flannel',
+        'virbr',
+        'tun',
+        'wg',
+        'ppp',
+        'ipsec',
+        'tailscale',
+        'utun',
+        'orichi',
+    ];
+    foreach ($prefixes as $prefix) {
+        if (str_starts_with($iface, $prefix)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function fd_lan_iface_score(string $iface): int
+{
+    $iface = strtolower($iface);
+    // Android hotspot / soft AP first.
+    if (preg_match('/^(ap\d*|wlan\d*_ap|softap\d*)$/', $iface)) {
+        return 100;
+    }
+    // Wi-Fi client or AP (wlan0, wlan1, wlan2, ...) — real shared LAN.
+    if (preg_match('/^wlan\d+/', $iface)) {
+        return 90;
+    }
+    if (preg_match('/^(rndis\d*|usb\d*|eth\d*|bnep\d*|bt-pan)$/', $iface)) {
+        return 70;
+    }
+    // Vendor virtual gateway (vgate0 is POINTOPOINT /32 — last-resort LAN).
+    if (str_starts_with($iface, 'vgate')) {
+        return 20;
+    }
+    return 40;
+}
+
+function fd_pick_lan_ip_from_text(string $output): string
+{
+    $currentIface = '';
+    $bestIp = '';
+    $bestScore = -1;
+    foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+        // `ip -4 addr show`: "2: wlan2: <BROADCAST,MULTICAST,UP,LOWER_UP> ..."
+        // `ifconfig` (standard): "wlan2: flags=4163<UP,BROADCAST,RUNNING,MULTICAST> ..."
+        // `ifconfig` (busybox):  "wlan2     Link encap:Ethernet  HWaddr ..."
+        if (
+            preg_match('/^\d+:\s+([^:@\s]+)/', $line, $m) ||
+            preg_match('/^([A-Za-z0-9_.-]+)[:\s]/', $line, $m)
+        ) {
+            $currentIface = $m[1];
+            continue;
+        }
+        if ($currentIface === '' || fd_is_skipped_lan_iface($currentIface)) {
+            continue;
+        }
+        if (!preg_match('/\binet(?:\s+addr)?:?\s*(\d+\.\d+\.\d+\.\d+)/', $line, $m)) {
+            continue;
+        }
+        $candidate = $m[1];
+        if (!fd_is_usable_lan_ipv4($candidate)) {
+            continue;
+        }
+        $score = fd_lan_iface_score($currentIface);
+        if ($score > $bestScore) {
+            $bestScore = $score;
+            $bestIp = $candidate;
+        }
+    }
+    return $bestIp;
+}
+
+function fd_lan_ip_from_php_ifaces(): string
+{
+    if (!function_exists('net_get_interfaces')) {
+        return '';
+    }
+    try {
+        $ifaces = @net_get_interfaces();
+    } catch (Throwable $e) {
+        return '';
+    }
+    if (!is_array($ifaces)) {
+        return '';
+    }
+    $bestIp = '';
+    $bestScore = -1;
+    foreach ($ifaces as $name => $info) {
+        $iface = explode(':', (string) $name, 2)[0];
+        if (fd_is_skipped_lan_iface($iface)) {
+            continue;
+        }
+        foreach (($info['unicast'] ?? []) as $addr) {
+            $ip = (string) ($addr['address'] ?? '');
+            if (!fd_is_usable_lan_ipv4($ip)) {
+                continue;
+            }
+            $score = fd_lan_iface_score($iface);
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestIp = $ip;
+            }
+        }
+    }
+    return $bestIp;
+}
+
+function fd_is_android_runtime(): bool
+{
+    $prefix = (string) ($_SERVER['PREFIX'] ?? $_ENV['PREFIX'] ?? '');
+    return is_file('/system/bin/getprop')
+        || isset($_SERVER['ANDROID_ROOT'])
+        || isset($_ENV['ANDROID_ROOT'])
+        || str_contains($prefix, 'com.termux')
+        || str_contains($prefix, 'com.pencarimovie')
+        || is_dir('/data/data/com.pencarimovie.downloader')
+        || is_dir('/data/data/com.termux');
+}
+
+function fd_cached_lan_ip(): string
+{
+    // Do not use getenv() — it was removed from this file because it can
+    // fatal on the Android/proot FrankenPHP build (disabled or missing).
+    $env = trim((string) ($_SERVER['LAN_IP'] ?? $_ENV['LAN_IP'] ?? ''));
+    if (fd_is_usable_lan_ipv4($env)) {
+        return $env;
+    }
+    try {
+        $path = fd_storage_path('storage/lan_ip.txt');
+        if (is_file($path)) {
+            $cached = trim((string) @file_get_contents($path));
+            if (fd_is_usable_lan_ipv4($cached)) {
+                return $cached;
+            }
+        }
+    } catch (Throwable $e) {
+        return '';
+    }
+    return '';
+}
+
+/**
+ * Safe LAN IP for JSON APIs. Never shells out and never calls getenv().
+ * Empty LAN_IP on old APKs must not fail session/auth.
+ */
+function fd_get_lan_ip_fast(): string
+{
+    try {
+        $cached = fd_cached_lan_ip();
+        if ($cached !== '') {
+            return $cached;
+        }
+        $serverAddr = (string) ($_SERVER['SERVER_ADDR'] ?? '');
+        if ($serverAddr !== '' && fd_is_usable_lan_ipv4($serverAddr)) {
+            return $serverAddr;
+        }
+    } catch (Throwable $e) {
+        return '';
+    }
+    return '';
+}
+
 function fd_get_lan_ip(): string
 {
-    if (stripos(PHP_OS, 'WIN') === 0) {
-        $lines = [];
-        @exec('route print -4 0.0.0.0', $lines);
-        $bestIp = '';
-        $bestMetric = 999999;
-        foreach ($lines as $line) {
-            if (preg_match('/0\.0\.0\.0\s+0\.0\.0\.0\s+(\S+)\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+)/', $line, $m)) {
-                $ip = $m[2];
-                $metric = (int) $m[3];
-                if ($ip !== '127.0.0.1' && !str_starts_with($ip, '169.254.') && !str_starts_with($ip, '192.168.56.')) {
-                    if ($metric < $bestMetric) {
+    try {
+        $fast = fd_get_lan_ip_fast();
+        if ($fast !== '') {
+            return $fast;
+        }
+
+        // Old APK / Termux / proot: shell_exec(ifconfig/getprop/ip) and
+        // net_get_interfaces() can hang or fatal. Skip live probes there.
+        if (fd_is_android_runtime()) {
+            return '';
+        }
+
+        $fromPhp = fd_lan_ip_from_php_ifaces();
+        if ($fromPhp !== '') {
+            return $fromPhp;
+        }
+
+        if (stripos(PHP_OS, 'WIN') === 0) {
+            $lines = [];
+            if (function_exists('exec')) {
+                @exec('route print -4 0.0.0.0', $lines);
+            }
+            $bestIp = '';
+            $bestMetric = 999999;
+            foreach ($lines as $line) {
+                if (preg_match('/0\.0\.0\.0\s+0\.0\.0\.0\s+(\S+)\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+)/', $line, $m)) {
+                    $ip = $m[2];
+                    $metric = (int) $m[3];
+                    if (fd_is_usable_lan_ipv4($ip) && $metric < $bestMetric) {
                         $bestMetric = $metric;
                         $bestIp = $ip;
                     }
                 }
             }
-        }
-        if ($bestIp !== '') return $bestIp;
-    } else {
-        $lines = [];
-        @exec('ip route get 8.8.8.8 2>/dev/null', $lines);
-        foreach ($lines as $line) {
-            if (preg_match('/src\s+(\d+\.\d+\.\d+\.\d+)/', $line, $m)) {
-                return $m[1];
+            if ($bestIp !== '') {
+                return $bestIp;
+            }
+        } elseif (function_exists('shell_exec')) {
+            foreach (['ip -4 addr show', 'ifconfig', 'busybox ifconfig'] as $cmd) {
+                $output = (string) @shell_exec($cmd . ' 2>/dev/null');
+                if ($output === '') {
+                    continue;
+                }
+                $candidate = fd_pick_lan_ip_from_text($output);
+                if ($candidate !== '') {
+                    return $candidate;
+                }
+            }
+
+            $hostIps = @shell_exec('hostname -I 2>/dev/null');
+            if ($hostIps) {
+                $parts = preg_split('/\s+/', trim($hostIps));
+                foreach ($parts as $part) {
+                    if ($part !== '' && fd_is_usable_lan_ipv4($part)) {
+                        return $part;
+                    }
+                }
             }
         }
+
+        $serverAddr = $_SERVER['SERVER_ADDR'] ?? '';
+        if ($serverAddr !== '' && fd_is_usable_lan_ipv4($serverAddr)) {
+            return $serverAddr;
+        }
+    } catch (Throwable $e) {
+        return '';
     }
-    return '127.0.0.1';
+    return '';
 }
 
 function fd_get_stremio_base_url(): string
@@ -1329,7 +2053,16 @@ if ($isNuvioRoute) {
         header('Content-Type: text/html; charset=utf-8');
         $manifestUrl = $baseUrl . '/manifest.json';
         $lanIp = fd_get_lan_ip();
-        $lanManifestUrl = ($lanIp !== '127.0.0.1') ? preg_replace('#://[^/]+#', '://' . $lanIp . ':8088', $manifestUrl) : $manifestUrl;
+        $requestHost = (string) (parse_url($baseUrl, PHP_URL_HOST) ?? ($_SERVER['SERVER_ADDR'] ?? '127.0.0.1'));
+        $openedViaLan = fd_is_usable_lan_ipv4($requestHost);
+        $parsedPort = parse_url($baseUrl, PHP_URL_PORT) ?? ($_SERVER['SERVER_PORT'] ?? '');
+        $portSuffix = ($parsedPort !== '' && $parsedPort !== '80' && $parsedPort !== '443') ? (':' . $parsedPort) : '';
+        $lanManifestUrl = ($lanIp !== '127.0.0.1') ? preg_replace('#://[^/]+#', '://' . $lanIp . $portSuffix, $manifestUrl) : $manifestUrl;
+        $versionCheck = fd_check_version();
+        $isOutdated = !empty($versionCheck['update_needed']);
+        $updateUrl = $versionCheck['update_url'] ?? 'https://github.com/ewangtlex/pencarimovie-desktop/releases/latest';
+        $minVersion = $versionCheck['minimum_version'] ?? '';
+        $currentVersion = $versionCheck['current_version'] ?? FD_APP_VERSION;
 ?>
         <!DOCTYPE html>
         <html lang="en">
@@ -1491,32 +2224,63 @@ if ($isNuvioRoute) {
             <div class="card">
                 <div class="logo">PencariMovie</div>
                 <div class="badge">NUVIO ADDON</div>
+
+                <?php if ($isOutdated): ?>
+                    <div style="background: rgba(231, 76, 60, 0.15); border: 1px solid rgba(231, 76, 60, 0.4); border-radius: 8px; padding: 14px; margin-bottom: 20px; text-align: left;">
+                        <div style="font-weight: 700; color: #ff6b6b; margin-bottom: 6px; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+                            ⚠️ Update Required
+                        </div>
+                        <div style="color: #ddd; font-size: 0.85rem; line-height: 1.4; margin-bottom: 10px;">
+                            Your app version (<strong>v<?= htmlspecialchars($currentVersion) ?></strong>) is outdated. Minimum version is <strong>v<?= htmlspecialchars($minVersion) ?></strong>.
+                        </div>
+                        <a href="<?= htmlspecialchars($updateUrl) ?>" target="_blank" rel="noopener noreferrer" style="display: inline-block; background: #e74c3c; color: #fff; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-size: 0.85rem; font-weight: 700;">
+                            ⬇️ Download Update
+                        </a>
+                    </div>
+                <?php endif; ?>
+
                 <div class="tagline">Stream movies, series from Telegram server directly in Nuvio</div>
 
-                <div class="manifest-label">Nuvio Manifest URL:</div>
+                <div class="manifest-label" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>📡 Wi-Fi / LAN Manifest URL (For TV, Phone, Tablet):</span>
+                    <span style="font-size: 0.72rem; background: rgba(0, 210, 106, 0.15); color: #00d26a; padding: 2px 8px; border-radius: 10px; font-weight: 600;">Recommended</span>
+                </div>
                 <div class="manifest-box" id="mUrl"><?= htmlspecialchars($lanManifestUrl) ?></div>
 
-                <div id="copiedNotice" class="status-copied">✓ Copied to clipboard!</div>
+                <div id="copiedNotice" class="status-copied">✓ Copied Wi-Fi / LAN URL to clipboard!</div>
 
-                <button class="btn" onclick="copyManifestUrl()">
-                    📋 Copy Manifest URL for Nuvio
+                <button class="btn" onclick="copyManifestUrl('mUrl', '✓ Copied Wi-Fi / LAN URL to clipboard!')">
+                    📋 Copy Wi-Fi / LAN Manifest URL
                 </button>
+
+                <?php if (!$openedViaLan): ?>
+                    <div class="manifest-label" style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px;">
+                        <span>💻 Localhost Manifest URL (This Device Only):</span>
+                        <span style="font-size: 0.72rem; background: rgba(255, 255, 255, 0.08); color: #aaa; padding: 2px 8px; border-radius: 10px; font-weight: 600;">Localhost</span>
+                    </div>
+                    <div class="manifest-box" id="mUrlLocal" style="color: #bbb; border-color: #333;"><?= htmlspecialchars($manifestUrl) ?></div>
+                    <button class="btn" style="background: #2a2a2a; border: 1px solid #3a3a3a; margin-bottom: 20px;" onclick="copyManifestUrl('mUrlLocal', '✓ Copied Local URL to clipboard!')">
+                        📋 Copy Localhost Manifest URL
+                    </button>
+                <?php endif; ?>
 
                 <div class="instructions">
                     <div class="instructions-title">🚀 How to install in Nuvio:</div>
                     <ol>
-                        <li>Open the <strong>Nuvio</strong> app on your Android TV, tablet, or phone.</li>
+                        <li>Connect your Android TV, phone, or tablet to the <strong>same Wi-Fi network</strong> as this server.</li>
+                        <li>Open the <strong>Nuvio</strong> app on your device.</li>
                         <li>Go to <strong>profile</strong> &rarr; <strong>content & discovery</strong> &rarr; <strong>addons</strong>.</li>
-                        <li>Paste the Manifest URL copied above and <strong>Install addon</strong>.</li>
+                        <li>Paste the <strong>Wi-Fi / LAN Manifest URL</strong> and click <strong>Install addon</strong>.</li>
                     </ol>
                 </div>
             </div>
 
             <script>
-                function copyManifestUrl() {
-                    const val = document.getElementById('mUrl').textContent.trim();
+                function copyManifestUrl(elementId = 'mUrl', msg = '✓ Copied to clipboard!') {
+                    const val = document.getElementById(elementId).textContent.trim();
                     navigator.clipboard.writeText(val);
                     const notice = document.getElementById('copiedNotice');
+                    notice.textContent = msg;
                     notice.style.display = 'block';
                     setTimeout(() => {
                         notice.style.display = 'none';
@@ -1575,10 +2339,20 @@ if ($isNuvioRoute) {
             'Western',
         ];
 
-        // Clean Stremio / Nuvio Catalogs by Country / Origin and Trending:
-        // Types: only standard 'movie' and 'series'
+        // Catalog order is the Nuvio/Stremio home-row order.
+        // Latest Releases is first so it appears at the top of each type.
         $manifestCatalogs = [
             // Movies Catalogs
+            [
+                'type' => 'movie',
+                'id' => 'pm_movies_latest',
+                'name' => 'Latest Releases',
+                'genres' => $allGenreOptions,
+                'extra' => [
+                    ['name' => 'genre', 'options' => $allGenreOptions, 'isRequired' => false],
+                    ['name' => 'skip', 'isRequired' => false],
+                ],
+            ],
             [
                 'type' => 'movie',
                 'id' => 'pm_search_movie',
@@ -1598,16 +2372,6 @@ if ($isNuvioRoute) {
                 'extra' => [
                     ['name' => 'search', 'isRequired' => true],
                     ['name' => 'genre', 'options' => ['4K', '1080p', '720p', 'BluRay', 'WEB-DL', 'HEVC'], 'isRequired' => false],
-                    ['name' => 'skip', 'isRequired' => false],
-                ],
-            ],
-            [
-                'type' => 'movie',
-                'id' => 'pm_trending_movies',
-                'name' => 'Trending',
-                'genres' => $allGenreOptions,
-                'extra' => [
-                    ['name' => 'genre', 'options' => $allGenreOptions, 'isRequired' => false],
                     ['name' => 'skip', 'isRequired' => false],
                 ],
             ],
@@ -1715,21 +2479,21 @@ if ($isNuvioRoute) {
             // Series Catalogs
             [
                 'type' => 'series',
-                'id' => 'pm_search_series',
-                'name' => 'Search Series',
+                'id' => 'pm_series_latest',
+                'name' => 'Latest Releases',
                 'genres' => $allGenreOptions,
                 'extra' => [
-                    ['name' => 'search', 'isRequired' => true],
                     ['name' => 'genre', 'options' => $allGenreOptions, 'isRequired' => false],
                     ['name' => 'skip', 'isRequired' => false],
                 ],
             ],
             [
                 'type' => 'series',
-                'id' => 'pm_trending_series',
-                'name' => 'Trending',
+                'id' => 'pm_search_series',
+                'name' => 'Search Series',
                 'genres' => $allGenreOptions,
                 'extra' => [
+                    ['name' => 'search', 'isRequired' => true],
                     ['name' => 'genre', 'options' => $allGenreOptions, 'isRequired' => false],
                     ['name' => 'skip', 'isRequired' => false],
                 ],
@@ -1828,7 +2592,7 @@ if ($isNuvioRoute) {
 
         $manifest = [
             'id' => 'org.pencarimovie.addon',
-            'version' => '2.0.0',
+            'version' => FD_APP_VERSION,
             'name' => 'PencariMovie',
             'description' => 'Stream movies, series from Telegram server directly in Nuvio',
             'resources' => ['catalog', 'meta', 'stream'],
@@ -1968,60 +2732,17 @@ if ($isNuvioRoute) {
                     }
                 }
             }
-        } elseif ($catalogId === 'pm_trending' || $catalogId === 'pm_trending_movies' || $catalogId === 'pm_trending_series') {
-            // Trending Catalog - fetch top trending searches from PencariMovie
-            $trending = fd_fetch_stream_ajax('trending', ['limit' => 20]);
-            $trendingKeywords = [];
-            if (is_array($trending)) {
-                foreach ($trending as $t) {
-                    $kw = trim($t['keyword'] ?? '');
-                    if ($kw !== '') $trendingKeywords[] = $kw;
-                }
-            }
-
-            $seenPostIds = [];
-            foreach (array_slice($trendingKeywords, 0, 10) as $kw) {
-                $kwPosts = fd_fetch_stream_ajax('search', ['search' => $kw, 'limit' => 4]);
-                if (is_array($kwPosts)) {
-                    foreach ($kwPosts as $post) {
-                        $pId = $post['id'] ?? 0;
-                        if (!$pId || isset($seenPostIds[$pId])) continue;
-                        $seenPostIds[$pId] = true;
-
-                        $pTitle = $post['title'] ?? '';
-                        $pThumb = $post['thumbnail_url'] ?? '';
-                        $pExcerpt = $post['excerpt'] ?? '';
-                        $pCats = (array) ($post['categories'] ?? []);
-
-                        $isSeries = preg_match('/tvseries|series|season|episode|drama/i', $pTitle . ' ' . implode(' ', $pCats));
-
-                        // Filter strictly for Movie or Series trending rows
-                        if ($catalogId === 'pm_trending_series' && !$isSeries) continue;
-                        if ($catalogId === 'pm_trending_movies' && $isSeries) continue;
-
-                        $itemType = ($catalogType === 'series' || $isSeries) ? 'series' : 'movie';
-
-                        $metas[] = [
-                            'id' => 'pm:post:' . $pId,
-                            'type' => $itemType,
-                            'name' => $pTitle,
-                            'poster' => $pThumb,
-                            'posterShape' => 'landscape',
-                            'description' => '🔥 Trending: ' . $kw . ($pExcerpt !== '' ? "\n\n" . $pExcerpt : ''),
-                            'genres' => array_values(array_unique(array_merge(['Trending'], $pCats))),
-                        ];
-                    }
-                }
-            }
         } else {
-            // Normal Category / Movies / Series / Specific Genre catalog
-            // Fetch extra items so that after filtering out mismatched media types (e.g. series in movie catalog),
-            // the returned list remains full.
-            $fetchLimit = max($limit * 2, 40);
+            // Browse catalogs. Country + Discover genre + movie/series type are ANDed
+            // in WordPress so titles are not dropped after fetch.
+            $fetchLimit = min(max($limit, 24), 100);
             $params = [
                 'limit' => $fetchLimit,
                 'offset' => $skip,
             ];
+            if ($catalogType === 'movie' || $catalogType === 'series') {
+                $params['media_type'] = $catalogType;
+            }
 
             $catalogCategoryMap = [
                 'pm_movies_malay' => 'malay',
@@ -2047,47 +2768,33 @@ if ($isNuvioRoute) {
                 'pm_series_indo' => 'indonesian',
             ];
 
-            if (isset($catalogCategoryMap[$catalogId])) {
+            if ($catalogId === 'pm_movies_latest' || $catalogId === 'pm_series_latest') {
+                // Latest releases - no country filter; genre extra still applies.
+                $params['category'] = '';
+            } elseif (isset($catalogCategoryMap[$catalogId])) {
                 $params['category'] = $catalogCategoryMap[$catalogId];
             } elseif (str_starts_with($catalogId, 'pm_cat_')) {
                 $catSlug = substr($catalogId, strlen('pm_cat_'));
                 if ($catSlug === 'indo') $catSlug = 'indonesian';
                 $params['category'] = $catSlug;
-            } elseif ($genre !== '') {
-                $gSlug = strtolower(trim($genre));
-                $gSlug = match ($gSlug) {
-                    'indo' => 'indonesian',
-                    'korean' => 'korea',
-                    'japanese' => 'japan',
-                    'chinese' => 'china',
-                    'philippines', 'pinoy', 'tagalog' => 'filipino',
-                    default => $gSlug,
-                };
-                $params['category'] = $gSlug;
-            } elseif ($catalogType === 'series' || $catalogId === 'pm_series') {
-                $params['category'] = 'drama';
+            }
+
+            if ($genre !== '') {
+                $params['genre'] = $genre;
             }
 
             $posts = fd_fetch_stream_ajax('posts', $params);
             if (is_array($posts)) {
                 foreach ($posts as $post) {
                     $pId = $post['id'] ?? 0;
+                    if (!$pId) {
+                        continue;
+                    }
                     $pTitle = $post['title'] ?? '';
                     $pThumb = $post['thumbnail_url'] ?? '';
                     $pExcerpt = $post['excerpt'] ?? '';
                     $pCats = (array) ($post['categories'] ?? []);
-
-                    $isSeries = preg_match('/tvseries|series|season|episode|drama/i', $pTitle . ' ' . implode(' ', $pCats));
-
-                    // Filter based on catalog type so Movies and Series rows are strictly segregated
-                    if ($catalogType === 'series' && !$isSeries) {
-                        continue;
-                    }
-                    if ($catalogType === 'movie' && $isSeries) {
-                        continue;
-                    }
-
-                    $itemType = ($catalogType === 'series' || $isSeries) ? 'series' : 'movie';
+                    $itemType = ($catalogType === 'series') ? 'series' : 'movie';
 
                     $metas[] = [
                         'id' => 'pm:post:' . $pId,
@@ -2197,9 +2904,13 @@ if ($isNuvioRoute) {
             $cats = (array) ($post['categories'] ?? []);
             $tags = (array) ($post['tags'] ?? []);
 
-            // Fetch attached files for this post (support long series with up to 5000 files)
-            $filesRes = fd_fetch_stream_ajax('post_files', ['post_id' => $postId, 'limit' => 5000]);
-            $files = (array) ($filesRes['files'] ?? []);
+            // Probe S01, S02, ... so later-season ranker boost cannot hide S1.
+            $files = $itemType === 'series'
+                ? fd_fetch_series_episode_files($postId)
+                : fd_fetch_post_files_paged($postId, [
+                    'page_size' => 50,
+                    'max_files' => 80,
+                ]);
 
             $isSeries = ($itemType === 'series') || preg_match('/tvseries|series|season|episode|drama/i', $title . ' ' . implode(' ', $cats));
             $resolvedType = $isSeries ? 'series' : 'movie';
@@ -2226,16 +2937,19 @@ if ($isNuvioRoute) {
                         $hasExplicitEp = true;
                     }
 
-                    // If file is a combined range (e.g. E01-E14), expand to all covered episodes
-                    $epList = ($eEnd > 0 && $eEnd >= $e && ($eEnd - $e) <= 100)
-                        ? range($e, $eEnd)
-                        : [$e];
+                    // Combined packs (E01-E14) stay as one list item.
+                    $epList = [$e];
 
                     foreach ($epList as $targetEp) {
-                        $key = "{$s}_{$targetEp}";
+                        // Keep unclassified E0 out of the numbered list until
+                        // we know the series has no explicit episodes at all.
+                        if ($targetEp <= 0) {
+                            $key = "{$s}_0";
+                        } else {
+                            $key = "{$s}_{$targetEp}";
+                        }
                         if (!isset($groupedEpisodes[$key])) {
-                            $cleanFTitle = fd_clean_media_title($fTitle);
-                            $epTitle = ($targetEp > 0 ? "Episode {$targetEp}" : ($cleanFTitle !== '' ? $cleanFTitle : "Episode {$epIndex}"));
+                            $epTitle = $targetEp > 0 ? ('S' . $s . 'E' . $targetEp) : ('Episode ' . $epIndex);
                             $groupedEpisodes[$key] = [
                                 'season' => $s,
                                 'episode' => $targetEp,
@@ -2265,21 +2979,40 @@ if ($isNuvioRoute) {
                     ];
                 }
 
-                // Convert grouped episodes to Stremio videos list
+                // Drop leftover E0 placeholders once real episode numbers exist
+                // for that season (S2_0 used to collide with S2E1 as id :2:1).
+                if ($hasExplicitEp) {
+                    foreach (array_keys($groupedEpisodes) as $key) {
+                        if (str_ends_with($key, '_0')) {
+                            unset($groupedEpisodes[$key]);
+                        }
+                    }
+                }
+
+                // Convert grouped episodes to Stremio/Nuvio videos list
+                $seenVideoIds = [];
                 foreach ($groupedEpisodes as $epInfo) {
-                    $s = $epInfo['season'];
-                    $e = $epInfo['episode'] > 0 ? $epInfo['episode'] : 1;
+                    $s = max(1, (int) $epInfo['season']);
+                    $e = $epInfo['episode'] > 0 ? (int) $epInfo['episode'] : 1;
+                    $videoId = "pm:post:{$postId}:{$s}:{$e}";
+                    if (isset($seenVideoIds[$videoId])) {
+                        continue;
+                    }
+                    $seenVideoIds[$videoId] = true;
                     $relDate = !empty($epInfo['added_date']) && is_numeric($epInfo['added_date'])
                         ? date('Y-m-d\TH:i:s\Z', (int)$epInfo['added_date'])
                         : date('Y-m-d\TH:i:s\Z');
+                    $epTitle = $epInfo['title'] !== '' ? $epInfo['title'] : ('S' . $s . 'E' . $e);
 
                     $videos[] = [
-                        'id' => "pm:post:{$postId}:{$s}:{$e}",
-                        'title' => $epInfo['title'],
+                        'id' => $videoId,
+                        'name' => $epTitle,
+                        'title' => $epTitle,
                         'season' => $s,
                         'episode' => $e,
                         'released' => $relDate,
                         'thumbnail' => $epInfo['thumbnail'] ?: $thumb,
+                        'available' => true,
                         'raw_index' => $epInfo['raw_index'],
                     ];
                 }
@@ -2332,7 +3065,22 @@ if ($isNuvioRoute) {
         $streams = [];
 
         $botIdStr = fd_get_bot_id();
-        $hasSession = $botIdStr !== '' && (is_file(FD_SESSION_PATH) || is_dir(FD_SESSION_PATH));
+        $hasSession = fd_has_local_session();
+
+        // Check if an app update is required
+        $versionCheck = fd_check_version();
+        if (!empty($versionCheck['update_needed'])) {
+            $minV = $versionCheck['minimum_version'] ?? '';
+            $curV = $versionCheck['current_version'] ?? FD_APP_VERSION;
+            $upUrl = $versionCheck['update_url'] ?? 'https://github.com/ewangtlex/pencarimovie-desktop/releases/latest';
+            $streams[] = [
+                'name' => '⚠️ Update Required',
+                'title' => "App version v{$curV} is outdated (Min: v{$minV})!\n👉 Tap to download required update",
+                'description' => "App version v{$curV} is outdated (Min: v{$minV})!\n👉 Tap to download required update",
+                'externalUrl' => $upUrl,
+            ];
+            fd_stremio_json(['streams' => $streams]);
+        }
 
         // If no bot is connected / bot is disconnected, return instructional connect stream card
         if (!$hasSession || $botIdStr === '') {
@@ -2379,23 +3127,12 @@ if ($isNuvioRoute) {
             $targetSeason = (int) $m[2];
             $targetEpisode = (int) $m[3];
 
-            $filesRes = fd_fetch_stream_ajax('post_files', ['post_id' => $postId, 'limit' => 5000]);
-            $postFiles = (array) ($filesRes['files'] ?? []);
-
-            foreach ($postFiles as $pf) {
-                if (empty($pf['short_code'])) continue;
-                $fTitle = $pf['title'] ?? '';
-                $fCaption = $pf['caption'] ?? '';
-                $parsed = fd_classify_season_episode($fTitle, (int)($pf['season_num'] ?? 0), (int)($pf['episode_num'] ?? 0), $fCaption);
-                if (fd_file_matches_episode($parsed, $targetSeason, $targetEpisode)) {
-                    $filesToStream[] = $pf;
-                }
-            }
-
-            // Fallback: if no exact match (e.g. single unnumbered telefilm file), use all post files
-            if (empty($filesToStream)) {
-                $filesToStream = $postFiles;
-            }
+            $filesToStream = fd_fetch_episode_stream_files(
+                $postId,
+                $targetSeason,
+                $targetEpisode,
+                40
+            );
 
             // Sort episode streams by quality: 4K UHD -> 1080p -> 720p -> SD -> file_size DESC
             usort($filesToStream, function ($a, $b) {
@@ -2419,8 +3156,10 @@ if ($isNuvioRoute) {
             $post = !empty($postData) && is_array($postData) ? ($postData[0] ?? $postData) : [];
             $postTitle = $post['title'] ?? '';
 
-            $filesRes = fd_fetch_stream_ajax('post_files', ['post_id' => $postId, 'limit' => 5000]);
-            $postFiles = (array) ($filesRes['files'] ?? []);
+            $postFiles = fd_fetch_post_files_paged($postId, [
+                'page_size' => 50,
+                'max_files' => 80,
+            ]);
 
             // For movie streams, strictly filter files to match post title and year
             if ($itemType === 'movie' || (!empty($postTitle) && !preg_match('/tvseries|series|season|episode|drama/i', $postTitle))) {
@@ -2516,12 +3255,16 @@ if ($isNuvioRoute) {
 
             if ($searchQuery !== '') {
                 if ($targetSeason !== null && $targetEpisode !== null) {
+                    $imdbEpisodeFilter = fd_episode_stream_filter($targetSeason, $targetEpisode);
+
                     // For Series Episode: search title with Season/Episode tokens
                     $epQuery = sprintf('%s S%02dE%02d', $searchQuery, $targetSeason, $targetEpisode);
                     $sf = fd_fetch_stream_ajax('search_files', ['search' => $epQuery, 'limit' => 30]);
                     if (is_array($sf) && !empty($sf['files'])) {
                         foreach ($sf['files'] as $f) {
-                            $filesToStream[] = $f;
+                            if ($imdbEpisodeFilter($f)) {
+                                $filesToStream[] = $f;
+                            }
                         }
                     }
 
@@ -2531,27 +3274,22 @@ if ($isNuvioRoute) {
                         $sfAlt = fd_fetch_stream_ajax('search_files', ['search' => $epQueryAlt, 'limit' => 30]);
                         if (is_array($sfAlt) && !empty($sfAlt['files'])) {
                             foreach ($sfAlt['files'] as $f) {
-                                $filesToStream[] = $f;
+                                if ($imdbEpisodeFilter($f)) {
+                                    $filesToStream[] = $f;
+                                }
                             }
                         }
                     }
 
-                    // Also search post files
+                    // Also search post files, still locked to this S/E
                     $sp = fd_fetch_stream_ajax('search', ['search' => $searchQuery, 'limit' => 5]);
                     if (is_array($sp)) {
                         foreach ($sp as $p) {
                             $pId = $p['id'] ?? 0;
                             if (!$pId) continue;
-                            $pFilesRes = fd_fetch_stream_ajax('post_files', ['post_id' => $pId, 'limit' => 5000]);
-                            $pFiles = (array) ($pFilesRes['files'] ?? []);
+                            $pFiles = fd_fetch_episode_stream_files((int) $pId, $targetSeason, $targetEpisode, 40);
                             foreach ($pFiles as $pf) {
-                                if (empty($pf['short_code'])) continue;
-                                $fTitle = $pf['title'] ?? '';
-                                $fCaption = $pf['caption'] ?? '';
-                                $parsed = fd_classify_season_episode($fTitle, (int)($pf['season_num'] ?? 0), (int)($pf['episode_num'] ?? 0), $fCaption);
-                                if (fd_file_matches_episode($parsed, $targetSeason, $targetEpisode)) {
-                                    $filesToStream[] = $pf;
-                                }
+                                $filesToStream[] = $pf;
                             }
                         }
                     }
@@ -2563,10 +3301,7 @@ if ($isNuvioRoute) {
                             $broadFiles = (array) ($sfBroad['files'] ?? []);
                             if (empty($broadFiles)) break;
                             foreach ($broadFiles as $bf) {
-                                if (empty($bf['short_code'])) continue;
-                                $bfTitle = $bf['title'] ?? '';
-                                $parsed = fd_classify_season_episode($bfTitle, (int)($bf['season_num'] ?? 0), (int)($bf['episode_num'] ?? 0));
-                                if ($parsed['season'] === $targetSeason && $parsed['episode'] === $targetEpisode) {
+                                if ($imdbEpisodeFilter($bf)) {
                                     $filesToStream[] = $bf;
                                 }
                             }
@@ -2613,8 +3348,8 @@ if ($isNuvioRoute) {
             }
         }
 
-        // Limit max stream items per request (e.g. 100 files max so all quality/sub releases are visible)
-        $maxStreamFiles = 100;
+        // Keep the playable stream list small: quality variants, not every file in a series.
+        $maxStreamFiles = 30;
         $filesToStream = array_slice($filesToStream, 0, $maxStreamFiles);
 
         foreach ($filesToStream as $fItem) {
@@ -2850,17 +3585,45 @@ if (str_starts_with($path, '/api/')) {
     if ($path !== '/api/download') {
         fd_require_local_request();
     }
+
+    // Lightweight routes must not load Composer/Madeline or hit the version
+    // gate. Refreshing the page calls /api/session; autoload or a 426 there
+    // is treated as logout by the frontend.
+    if ($path === '/api/version') {
+        fd_json(fd_check_version());
+    }
+
+    if ($path === '/api/lan-ip') {
+        fd_json([
+            'ok' => 1,
+            'lan_ip' => fd_get_lan_ip(),
+        ]);
+    }
+
+    if ($path === '/api/session') {
+        $botId = fd_get_bot_id();
+        $meta = fd_load_session_meta();
+        // Leftover session.madeline without bot_id still lets the catalog load,
+        // but WordPress resolve-file fails with "bot_id not found". Treat that
+        // as incomplete login so the frontend shows the token prompt.
+        $hasSession = fd_has_local_session() && $botId !== '';
+
+        fd_json([
+            'ok' => 1,
+            'has_session' => $hasSession,
+            'bot_id' => $hasSession ? $botId : '',
+            'bot_username' => $hasSession ? (string) ($meta['bot_username'] ?? '') : '',
+            'bot_name' => $hasSession ? (string) ($meta['bot_name'] ?? '') : '',
+            'api_secret' => $hasSession ? fd_get_api_secret() : '',
+        ]);
+    }
+
     fd_require_fileinfo();
 
     // Pre-load Composer autoloader so amphp classes (HttpClient, etc.) are
     // available for all API routes. fd_ensure_autoload() handles the output
     // buffering needed to suppress the polyfill.php echo warning on Windows.
     fd_ensure_autoload();
-
-    // ── GET /api/version — check version against WordPress minimum ──────────
-    if ($path === '/api/version') {
-        fd_json(fd_check_version());
-    }
 
     // ── Version gate — block all other endpoints if update is required ──────
     $v0 = microtime(true);
@@ -2905,37 +3668,6 @@ if (str_starts_with($path, '/api/')) {
             fd_json($result, 403);
         }
         fd_json($result);
-    }
-
-    // ── GET /api/session — check if MadelineProto session is valid ──────────
-    if ($path === '/api/session') {
-        [$madeline, $error] = fd_boot_madeline();
-
-        if (!$madeline) {
-            fd_json([
-                'ok' => 1,
-                'has_session' => false,
-                'message' => $error,
-            ]);
-        }
-
-        try {
-            $self = $madeline->getSelf();
-            fd_json([
-                'ok' => 1,
-                'has_session' => true,
-                'bot_id' => (string) ($self['id'] ?? ''),
-                'bot_username' => (string) ($self['username'] ?? ''),
-                'bot_name' => (string) ($self['first_name'] ?? ''),
-                'api_secret' => fd_get_api_secret(),
-            ]);
-        } catch (Throwable $throwable) {
-            fd_json([
-                'ok' => 1,
-                'has_session' => false,
-                'message' => $throwable->getMessage(),
-            ]);
-        }
     }
 
     // ── POST /api/botlogin — one-time bot token login ───────────────────────
@@ -3027,6 +3759,11 @@ if (str_starts_with($path, '/api/')) {
             ob_start();
 
             fd_log('botlogin successful', ['bot_id' => $botId, 'bot_username' => $self['username'] ?? '']);
+            fd_save_session_meta(
+                $botId,
+                (string) ($self['username'] ?? ''),
+                (string) ($self['first_name'] ?? '')
+            );
             fd_json([
                 'ok' => 1,
                 'bot_id' => $botId,
@@ -3151,7 +3888,7 @@ if (str_starts_with($path, '/api/')) {
 
         // Fast-fail if Telegram Bot is not connected or disconnected
         $activeBotId = fd_get_bot_id();
-        if ($activeBotId === '' || (!is_file(FD_SESSION_PATH) && !is_dir(FD_SESSION_PATH))) {
+        if (!fd_has_local_session()) {
             header('Cache-Control: no-cache, no-store, must-revalidate');
             header('Connection: close');
             fd_json([

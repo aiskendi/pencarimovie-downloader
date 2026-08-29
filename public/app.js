@@ -49,7 +49,11 @@ class PencariMovieApp {
     this.botId = '';
     this.botUsername = '';
     this.botName = '';
+    this.apiSecret = '';
     this.hasSession = false;
+    this.lanIp = '';
+    this._updateAddonModalUrls = () => {};
+    this._restoreCachedSession();
 
     // ── DOM ref shortcuts ──
     this.$ = (sel) => document.querySelector(sel);
@@ -101,7 +105,11 @@ class PencariMovieApp {
         await this.loadSessionStatus();
       } catch (e) {
         console.warn('Session check failed:', e);
-        this.hasSession = false;
+        // Keep the constructor cache. A failed /api/session probe after
+        // refresh must not look like a logout.
+        if (!this.hasSession) {
+          this._restoreCachedSession();
+        }
       }
     }
 
@@ -115,7 +123,10 @@ class PencariMovieApp {
 
       // Check for deep links first
       const hash = window.location.hash;
-      if (hash.startsWith('#file/')) {
+      if (hash === '#settings') {
+        await this.loadInitialData();
+        this.showSettingsGate({ forceToken: !this.botId });
+      } else if (hash.startsWith('#file/')) {
         const shortCode = hash.replace('#file/', '');
         // Load main page data in background so it's rendered when user goes back
         this.loadInitialData().catch((err) => console.warn('Background init data load failed:', err));
@@ -159,10 +170,7 @@ class PencariMovieApp {
 
     const afterLogout = () => {
       this.clearSession().then(() => {
-        localStorage.removeItem('tgfd.botId');
-        this.botId = '';
-        this.botUsername = '';
-        this.hasSession = false;
+        this._clearCachedSession();
         this.$('#botTokenInput').value = '';
         this.showSettingsGate();
       });
@@ -184,16 +192,68 @@ class PencariMovieApp {
     const addonBtn = this.$('#addonBtn');
     const addonClose = this.$('#addonModalClose');
     const copyAddonBtn = this.$('#copyAddonManifestBtn');
+    const copyAddonLanBtn = this.$('#copyAddonManifestLanBtn');
     const manifestInput = this.$('#addonManifestInput');
+    const manifestLanInput = this.$('#addonManifestLanInput');
+    const addonLanField = this.$('#addonLanField');
+    const addonLocalField = this.$('#addonLocalField');
     const copiedStatus = this.$('#addonCopiedStatus');
 
-    const manifestUrl = window.location.origin + '/manifest.json';
-    if (manifestInput) {
-      manifestInput.value = manifestUrl;
-    }
+    const isUsableLanHost = (host) => {
+      const value = String(host || '').trim();
+      if (!value || value === 'localhost' || value === '::1') {
+        return false;
+      }
+      const ipv4 = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+      if (!ipv4) {
+        return value !== '127.0.0.1';
+      }
+      const a = Number(ipv4[1]);
+      const b = Number(ipv4[2]);
+      if (a === 127 || a === 0 || (a === 169 && b === 254)) {
+        return false;
+      }
+      // RFC1918 only — never show ISP/cellular public IPs on the Nuvio card.
+      return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+    };
+
+    const updateAddonModalUrls = () => {
+      const port = window.location.port ? `:${window.location.port}` : '';
+      const protocol = window.location.protocol;
+      const localUrl = `${protocol}//127.0.0.1${port}/manifest.json`;
+      const pageHost = window.location.hostname;
+      const lanHost = isUsableLanHost(this.lanIp)
+        ? this.lanIp
+        : (isUsableLanHost(pageHost) ? pageHost : '');
+      const lanUrl = lanHost ? `${protocol}//${lanHost}${port}/manifest.json` : '';
+
+      if (manifestInput) {
+        manifestInput.value = localUrl;
+      }
+
+      if (manifestLanInput) {
+        manifestLanInput.value = lanUrl || localUrl;
+      }
+
+      if (addonLanField) {
+        addonLanField.classList.toggle('hidden', !lanUrl);
+      }
+
+      if (addonLocalField) {
+        const openedViaLan = isUsableLanHost(pageHost);
+        addonLocalField.classList.toggle('hidden', openedViaLan);
+      }
+    };
+
+    this._updateAddonModalUrls = updateAddonModalUrls;
+    updateAddonModalUrls();
 
     const openAddonModal = () => {
       if (addonModal) {
+        this.loadLanIp().finally(() => {
+          updateAddonModalUrls();
+        });
+        updateAddonModalUrls();
         addonModal.classList.remove('hidden');
         addonModal.setAttribute('aria-hidden', 'false');
         if (copiedStatus) copiedStatus.classList.add('hidden');
@@ -219,14 +279,27 @@ class PencariMovieApp {
       });
     }
 
+    const showCopiedFeedback = (msg = '✓ Copied to clipboard!') => {
+      if (copiedStatus) {
+        copiedStatus.textContent = msg;
+        copiedStatus.classList.remove('hidden');
+        setTimeout(() => copiedStatus.classList.add('hidden'), 3000);
+      }
+    };
+
+    if (copyAddonLanBtn && manifestLanInput) {
+      copyAddonLanBtn.addEventListener('click', () => {
+        manifestLanInput.select();
+        navigator.clipboard.writeText(manifestLanInput.value);
+        showCopiedFeedback('✓ Copied Wi-Fi / LAN URL to clipboard!');
+      });
+    }
+
     if (copyAddonBtn && manifestInput) {
       copyAddonBtn.addEventListener('click', () => {
         manifestInput.select();
         navigator.clipboard.writeText(manifestInput.value);
-        if (copiedStatus) {
-          copiedStatus.classList.remove('hidden');
-          setTimeout(() => copiedStatus.classList.add('hidden'), 3000);
-        }
+        showCopiedFeedback('✓ Copied Localhost URL to clipboard!');
       });
     }
 
@@ -281,8 +354,24 @@ class PencariMovieApp {
     });
 
     const handleMediaPlaybackError = (mediaEl) => {
-      if (!mediaEl || !mediaEl.src) return;
-      console.warn('[Player] Media playback failed for source:', mediaEl.src);
+      if (!mediaEl) return;
+      if (mediaEl.dataset.pmIgnoreError === '1') {
+        delete mediaEl.dataset.pmIgnoreError;
+        return;
+      }
+
+      // src='' + load() resolves to the current #file/ page URL. That is
+      // not a stream failure — it happens while "Resolving file info..."
+      // is still showing.
+      const attrSrc = String(mediaEl.getAttribute('src') || '').trim();
+      const currentSrc = String(mediaEl.currentSrc || mediaEl.src || '').trim();
+      const isDownloadSrc = attrSrc.includes('/api/download') || currentSrc.includes('/api/download');
+      if (!attrSrc || !isDownloadSrc) return;
+
+      const resolvingEl = this.$('#fileDetailResolving');
+      if (resolvingEl && !resolvingEl.classList.contains('hidden')) return;
+
+      console.warn('[Player] Media playback failed for source:', currentSrc || attrSrc);
       const titleEl = this.$('#fileDetailTitle');
       const tagsEl = this.$('#fileDetailTags');
       if (titleEl) titleEl.textContent = 'Stream playback failed';
@@ -298,7 +387,9 @@ class PencariMovieApp {
         `;
         const reconnectBtn = this.$('#fileDetailReconnectBtn');
         if (reconnectBtn) {
-          reconnectBtn.addEventListener('click', () => this.showSettingsGate());
+          reconnectBtn.addEventListener('click', () => {
+            this.showSettingsGate({ forceToken: !this.botId });
+          });
         }
       }
     };
@@ -352,37 +443,140 @@ class PencariMovieApp {
   //  SESSION MANAGEMENT
   // ══════════════════════════════════════════════════════════════
 
+  async loadLanIp() {
+    try {
+      const data = await this.requestJson(`${this.localApiBase}/api/lan-ip`);
+      const lanIp = String(data?.lan_ip || '').trim();
+      if (lanIp && lanIp !== '127.0.0.1') {
+        this.lanIp = lanIp;
+        this._updateAddonModalUrls();
+      }
+    } catch (e) {
+      // Non-fatal — never tied to bot session.
+    }
+  }
+
+  _sessionCacheKey() {
+    return 'tgfd.session';
+  }
+
+  _restoreCachedSession() {
+    try {
+      const raw = localStorage.getItem(this._sessionCacheKey());
+      if (!raw) {
+        const legacyBotId = String(localStorage.getItem('tgfd.botId') || '').trim();
+        if (legacyBotId) {
+          this.botId = legacyBotId;
+          this.hasSession = true;
+        }
+        return;
+      }
+      const cached = JSON.parse(raw);
+      if (!cached || cached.hasSession !== true) {
+        return;
+      }
+      this.botId = String(cached.botId || '').trim();
+      this.botUsername = String(cached.botUsername || '');
+      this.botName = String(cached.botName || '');
+      this.apiSecret = String(cached.apiSecret || '');
+      // A cached "logged in" flag without bot_id cannot resolve files on WordPress.
+      this.hasSession = this.botId !== '';
+    } catch (e) {
+      // Ignore corrupt cache.
+    }
+  }
+
+  _persistCachedSession() {
+    try {
+      if (!this.hasSession) {
+        this._clearCachedSession();
+        return;
+      }
+      localStorage.setItem(this._sessionCacheKey(), JSON.stringify({
+        hasSession: true,
+        botId: this.botId || '',
+        botUsername: this.botUsername || '',
+        botName: this.botName || '',
+        apiSecret: this.apiSecret || '',
+      }));
+      if (this.botId) {
+        localStorage.setItem('tgfd.botId', this.botId);
+      }
+    } catch (e) {
+      // Private mode / quota — session files on disk still win.
+    }
+  }
+
+  _clearCachedSession() {
+    this.botId = '';
+    this.botUsername = '';
+    this.botName = '';
+    this.apiSecret = '';
+    this.hasSession = false;
+    try {
+      localStorage.removeItem(this._sessionCacheKey());
+      localStorage.removeItem('tgfd.botId');
+    } catch (e) {
+      // Ignore storage errors.
+    }
+  }
+
   async loadSessionStatus() {
     try {
       const data = await this.requestJson(`${this.localApiBase}/api/session`);
       const hasSession = Boolean(data?.has_session);
 
       if (hasSession) {
-        this.botId = String(data.bot_id || '').trim();
-        this.botUsername = String(data.bot_username || '');
-        this.botName = String(data.bot_name || '');
-        this.apiSecret = String(data.api_secret || '');
-        this.hasSession = true;
-        if (this.botId) {
-          localStorage.setItem('tgfd.botId', this.botId);
+        this.botId = String(data.bot_id || this.botId || '').trim();
+        this.botUsername = String(data.bot_username || this.botUsername || '');
+        this.botName = String(data.bot_name || this.botName || '');
+        this.apiSecret = String(data.api_secret || this.apiSecret || '');
+        // Leftover Madeline session files can keep browsing unlocked while
+        // WordPress resolve-file fails with "bot_id not found".
+        if (!this.botId) {
+          this._clearCachedSession();
+        } else {
+          this.hasSession = true;
+          this._persistCachedSession();
         }
-      } else {
-        this.botId = '';
-        this.botUsername = '';
-        this.botName = '';
-        this.apiSecret = '';
-        this.hasSession = false;
+      } else if (data && data.ok === 1) {
+        this._clearCachedSession();
       }
     } catch (error) {
       console.warn('Session check failed:', error);
-      this.botId = '';
-      this.botUsername = '';
-      this.botName = '';
-      this.hasSession = false;
+      // Keep the cached login. A failed probe after refresh must not
+      // look like a logout.
+      if (!this.hasSession) {
+        this._restoreCachedSession();
+      }
     }
   }
 
-  showSettingsGate() {
+  _isReloginRequired(message) {
+    const text = String(message || '').toLowerCase();
+    return text.includes('not allowed')
+      || text.includes('bot_id not found')
+      || text.includes('reset and enter')
+      || text.includes('enter new bot token')
+      || text.includes('enter new one');
+  }
+
+  promptBotRelogin(message) {
+    const msg = String(message || '').trim()
+      || 'Bot ID not found. Please enter your bot token again.';
+    this.clearSession().then(() => {
+      this._clearCachedSession();
+      const input = this.$('#botTokenInput');
+      if (input) input.value = '';
+      this.showSettingsGate({ forceToken: true, message: msg });
+    }).catch((err) => {
+      console.warn('Failed to prompt bot re-login:', err);
+      this._clearCachedSession();
+      this.showSettingsGate({ forceToken: true, message: msg });
+    });
+  }
+
+  showSettingsGate(options = {}) {
     this._hideLoadingScreen();
 
     const gate = this.$('#settingsGate');
@@ -390,6 +584,8 @@ class PencariMovieApp {
     const tokenSection = this.$('#settingsTokenSection');
     const connectedSection = this.$('#settingsConnectedSection');
     const closeBtn = this.$('#settingsClose');
+    const statusEl = this.$('#settingsStatus');
+    const forceToken = Boolean(options.forceToken) || !this.hasSession;
 
     if (!gate) return;
 
@@ -397,7 +593,7 @@ class PencariMovieApp {
     gate.setAttribute('aria-hidden', 'false');
     gate.removeAttribute('inert');
 
-    if (this.hasSession) {
+    if (!forceToken && this.hasSession) {
       // ── Overlay mode: bot connected ──
       // Keep streamApp visible underneath
       if (app) {
@@ -417,7 +613,7 @@ class PencariMovieApp {
       if (nameEl) nameEl.textContent = this.botName || 'Connected';
       if (usernameEl) usernameEl.textContent = this.botUsername ? '@' + this.botUsername : '';
     } else {
-      // ── Setup mode: no session ──
+      // ── Setup / re-login mode ──
       // Hide streamApp underneath
       if (app) {
         app.classList.add('hidden');
@@ -433,6 +629,10 @@ class PencariMovieApp {
       // Focus token input
       const input = this.$('#botTokenInput');
       if (input) setTimeout(() => input.focus(), 100);
+    }
+
+    if (statusEl && options.message) {
+      statusEl.textContent = options.message;
     }
 
     // Hide file detail page if open
@@ -524,11 +724,11 @@ class PencariMovieApp {
       const botName = String(loginResp.bot_name || '');
 
       this.apiSecret = String(loginResp.api_secret || '');
-      localStorage.setItem('tgfd.botId', botId);
       this.botId = botId;
       this.botUsername = botUsername;
       this.botName = botName;
       this.hasSession = true;
+      this._persistCachedSession();
 
       this.hideSettingsGate();
       this.updateBotBadge();
@@ -577,6 +777,28 @@ class PencariMovieApp {
       "'": '&#039;',
       '"': '"'
     })[char]);
+  }
+
+  cleanMediaTitle(title) {
+    if (!title) return '';
+    let t = String(title);
+    // Strip emojis
+    t = t.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, ' ');
+    // Strip website / streaming host prefixes
+    t = t.replace(/^(?:on9[._\s]stream[._\s]+|stream[._\s]+|www\.[a-z0-9.-]+\.[a-z]{2,}[._\s]+)/i, '');
+    // Strip forwarded and join channel spam
+    t = t.replace(/forwarded[._\s]from.*$/i, '');
+    t = t.replace(/(?:Join[._\s]Channel|Join[._\s]Group|Join[._\s]us|Join[._\s]@).*$/i, '');
+    t = t.replace(/kumpulan[._\s]drama.*$/i, '');
+    t = t.replace(/Please[.\s]Don['""]?t[.\s]Forward.*$/i, '');
+    t = t.replace(/(?:Req\.By|Request\.By|File\.Request\.By|Requested\.By).*$/i, '');
+    t = t.replace(/(?:Channel\.Terbaik\.Anda|Filemku\.bot|LayarAsiaBot|filembot).*$/i, '');
+    t = t.replace(/(?:https?:\/\/|httpst\.me|https?\.?t\.me|\bt\.me\/)[\w./?=&_-]*/gi, '');
+    t = t.replace(/[._\s]+Watch[._\s]Hd[._\s]Video[._\s]Online.*$/i, '');
+    t = t.replace(/(?:^|[.\s_#-]+)Open[.\s_-]*Mini[.\s_-]*App.*$/iu, '');
+    t = t.replace(/(?:[.\s_-]*\d+(?:[.,]\d+)?[.\s_-]*(?:MB|GB|KB|TB))+(?:[.\s_-]*https)?(?:[.\s_-]*Open[.\s_-]*Mini[.\s_-]*App)?$/iu, '');
+    // Trim punctuation / whitespace
+    return t.replace(/^[\s._\-=\t\n\r]+|[\s._\-=\t\n\r]+$/g, '');
   }
 
   formatSize(bytes) {
@@ -882,6 +1104,28 @@ class PencariMovieApp {
     }
   }
 
+  _resetMediaElement(el) {
+    if (!el) return;
+    el.pause();
+    el.dataset.pmIgnoreError = '1';
+    el.removeAttribute('poster');
+    el.removeAttribute('src');
+    try {
+      el.src = '';
+      el.load();
+    } catch (e) {
+      // Ignore unload errors from empty src.
+    }
+    el.classList.add('hidden');
+  }
+
+  _resetFileDetailPlayer() {
+    this._resetMediaElement(this.$('#fileDetailVideo'));
+    this._resetMediaElement(this.$('#fileDetailAudio'));
+    const playerEl = this.$('#fileDetailPlayer');
+    if (playerEl) playerEl.classList.add('hidden');
+  }
+
   /** Hide resolving spinner and optionally show action buttons */
   _endResolving(showActions = true) {
     const resolvingEl = this.$('#fileDetailResolving');
@@ -1131,6 +1375,9 @@ class PencariMovieApp {
     }
 
     if (!response.ok) {
+      if (response.status === 426 && data?.update_needed) {
+        this.showUpdateRequired(data);
+      }
       throw new Error(data?.message || data?.code || `HTTP ${response.status}`);
     }
 
@@ -1836,7 +2083,7 @@ class PencariMovieApp {
     }
 
     try {
-      const result = await this.fetchStream('post_files', { post_id: postId, limit: 500 });
+      const result = await this.fetchStream('post_files', { post_id: postId, limit: 100 });
       const files = result?.files || [];
 
       if (files.length === 0) {
@@ -2002,12 +2249,7 @@ class PencariMovieApp {
     this.$('#fileDetailSize').textContent = '';
 
     // Reset player state before showing new file detail
-    const playerEl = this.$('#fileDetailPlayer');
-    const videoEl = this.$('#fileDetailVideo');
-    const audioEl = this.$('#fileDetailAudio');
-    if (videoEl) { videoEl.pause(); videoEl.src = ''; videoEl.load(); videoEl.classList.add('hidden'); }
-    if (audioEl) { audioEl.pause(); audioEl.src = ''; audioEl.load(); audioEl.classList.add('hidden'); }
-    if (playerEl) playerEl.classList.add('hidden');
+    this._resetFileDetailPlayer();
     // Show Stream button by default (will hide if video/audio embedded)
     this.$('#fileDetailStreamBtn').classList.remove('hidden');
 
@@ -2060,7 +2302,12 @@ class PencariMovieApp {
       this._endResolving(data && data.ok);
 
       if (!data || !data.ok) {
+        const failMsg = data?.message || 'Failed to resolve file';
         this.$('#fileDetailTitle').textContent = 'Failed to resolve file';
+        this.$('#fileDetailTags').innerHTML = `<span style="color:var(--accent)">${this.escapeHtml(failMsg)}</span>`;
+        if (this._isReloginRequired(failMsg) || !this.botId) {
+          this.promptBotRelogin(failMsg);
+        }
         return;
       }
 
@@ -2078,17 +2325,11 @@ class PencariMovieApp {
       this.$('#fileDetailTitle').textContent = 'Error resolving file';
       this.$('#fileDetailTags').innerHTML = `<span style="color:var(--accent)">${this.escapeHtml(msg)}</span>`;
 
-      // Auto-logout if WordPress rejected the request (expired/missing API secret)
-      if (!isTimeout && msg.includes('not allowed')) {
-        this.clearSession().then(() => {
-          localStorage.removeItem('tgfd.botId');
-          this.botId = '';
-          this.botUsername = '';
-          this.apiSecret = '';
-          this.hasSession = false;
-          this.$('#botTokenInput').value = '';
-          this.showSettingsGate();
-        });
+      // Auto-logout when WordPress says the bot is missing / API secret is invalid.
+      // Catalog browsing can still work from a leftover Madeline session, so the
+      // settings gate must be forced into token-entry mode instead of "Connected".
+      if (!isTimeout && (this._isReloginRequired(msg) || !this.botId)) {
+        this.promptBotRelogin(msg);
       }
     }
   }
@@ -2185,20 +2426,8 @@ class PencariMovieApp {
       filePage.setAttribute('aria-hidden', 'true');
     }
 
-    // Pause and reset embedded player — must happen before any context
-    // restoration so all three exit paths (post, search, else) stop media
-    //
-    // Using src='' instead of removeAttribute('src') because the browser
-    // maintains an internal media resource reference after the content
-    // attribute is removed; setting the IDL property to empty string is
-    // more reliable at forcing the resource selection algorithm to unload
-    // the current media when followed by load().
-    const videoEl = this.$('#fileDetailVideo');
-    const audioEl = this.$('#fileDetailAudio');
-    const playerEl = this.$('#fileDetailPlayer');
-    if (videoEl) { videoEl.pause(); videoEl.src = ''; videoEl.load(); videoEl.classList.add('hidden'); }
-    if (audioEl) { audioEl.pause(); audioEl.src = ''; audioEl.load(); audioEl.classList.add('hidden'); }
-    if (playerEl) playerEl.classList.add('hidden');
+    // Pause and reset embedded player before restoring post/search context.
+    this._resetFileDetailPlayer();
 
     // Reset resolving state (in case file detail was closed mid-resolve)
     this._endResolving();
@@ -2323,7 +2552,9 @@ class PencariMovieApp {
 
   _checkHash() {
     const hash = window.location.hash;
-    if (hash.startsWith('#post/')) {
+    if (hash === '#settings') {
+      this.showSettingsGate({ forceToken: !this.botId });
+    } else if (hash.startsWith('#post/')) {
       const postId = hash.replace('#post/', '');
       this._openPostFromHash(postId);
     } else if (hash.startsWith('#file/')) {
@@ -2344,6 +2575,8 @@ class PencariMovieApp {
       if (this._isCategoryPageOpen) this.closeCategoryPage();
       if (this.isModalOpen) this.closeModal();
       if (this.isFileDetailOpen()) this.closeFileDetail();
+    } else if (hash === '#settings') {
+      this.showSettingsGate({ forceToken: !this.botId });
     } else if (hash.startsWith('#category/')) {
       const slug = hash.replace('#category/', '');
 
