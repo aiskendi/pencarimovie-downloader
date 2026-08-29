@@ -44,6 +44,9 @@ build-rootfs-termux.sh
 scripts/package-android.*
 scripts/build-bootstrap.ps1
 
+# Documentation & development docs
+docs/
+
 # References and sub-repos
 references/
 
