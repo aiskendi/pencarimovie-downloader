@@ -56,7 +56,7 @@ The server includes a built‑in addon compatible with Stremio (and Nuvio). Once
 ### Android App
 
 ARM64
-https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie_arm64-v8a.apk
+https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie_arm64-v8a.apk
 
 On every Start the APK checks GitHub `releases/latest`. If a newer tag exists it downloads `pencarimovie-downloader-linux-aarch64.tar.gz` and extracts it over the app folder, leaving `storage/` (bot session) in place.
 
@@ -69,7 +69,7 @@ For most modern Android phones with ARM64 CPUs, this APK should work: https://gi
 Universal arm64-v8a, armeabi-v7a, x86, and x86_64: https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_universal.apk
 
 ```bash
-pkg install wget proot -y && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-termux.sh && bash pencarimovie-termux.sh
+pkg install wget proot -y && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-termux.sh && bash pencarimovie-termux.sh
 ```
 
 ```bash
@@ -83,7 +83,7 @@ On every start the installer checks GitHub `releases/latest`. If a newer tag exi
 ### Windows
 
 ```powershell
-Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-windows.bat" -OutFile "pencarimovie-windows.bat" -UseBasicParsing; .\pencarimovie-windows.bat
+Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-windows.bat" -OutFile "pencarimovie-windows.bat" -UseBasicParsing; .\pencarimovie-windows.bat
 ```
 
 ```text
@@ -99,7 +99,7 @@ On every start the installer checks GitHub `releases/latest`. If a newer tag exi
 ### Linux
 
 ```bash
-curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-linux.sh && bash pencarimovie-linux.sh
+curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-linux.sh && bash pencarimovie-linux.sh
 ```
 
 ```bash
@@ -118,7 +118,7 @@ Choose the correct macOS package for your Mac:
 - Intel Mac: `pencarimovie-downloader-mac-x86_64.tar.gz`
 
 ```bash
-mkdir pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+mkdir pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 ```
 
 ### On Browser
