@@ -130,7 +130,7 @@ function fd_storage_path(string $file): string
 define('FD_SESSION_PATH', fd_storage_path('storage/session.madeline'));
 define('FD_WP_API_BASE', 'https://pencarimovie.com/wp-json/fastdownloader/v1');
 define('FD_WP_AJAX_URL', 'https://pencarimovie.com/wp-admin/admin-ajax.php');
-define('FD_APP_VERSION', '0.9.0');
+define('FD_APP_VERSION', '1.0.1');
 define('FD_WP_VERSION_URL', FD_WP_API_BASE . '/version');
 define('FD_API_SECRET_PATH', fd_storage_path('storage/api_secret.key'));
 define('FD_BOT_ID_CACHE_PATH', fd_storage_path('storage/bot_id.txt'));

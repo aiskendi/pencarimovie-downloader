@@ -2,7 +2,7 @@
 
 All notable changes to the PencariMovie Server / Downloader project will be documented in this file.
 
-## [0.9.0] - 2026-08-29
+## [1.0.1] - 2026-08-29
 
 ### Added
 
