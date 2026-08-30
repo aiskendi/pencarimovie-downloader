@@ -122,7 +122,7 @@ Once the server is running, open your browser at:
 👉 **`http://127.0.0.1:8088`** _(or your device's LAN IP)_
 
 1. **Obtain a Bot Token**:
-   - Create a free bot in seconds via [@CreateNewTelegramBot](https://t.me/CreateNewTelegramBot?start=localserver) or [@BotFather](https://t.me/BotFather).
+   - Create a free bot in seconds via [@CreateNewTelegramBot](https://t.me/CreateNewTelegramBot?start=localserver).
 2. **Connect**:
    - Paste the bot token into the setup gate prompt and click **Connect**.
 3. **Session Created**:
