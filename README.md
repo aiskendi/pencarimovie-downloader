@@ -183,7 +183,7 @@ $env:PORT="9090"; .\pencarimovie-windows.bat
 
 ---
 
-## 🏗️ Architecture & How It Works
+## 🏗️ How It Works
 
 ```
 ┌────────────────────────────────────────────────────────┐
