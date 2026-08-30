@@ -135,6 +135,7 @@ define('FD_WP_VERSION_URL', FD_WP_API_BASE . '/version');
 define('FD_API_SECRET_PATH', fd_storage_path('storage/api_secret.key'));
 define('FD_BOT_ID_CACHE_PATH', fd_storage_path('storage/bot_id.txt'));
 define('FD_SESSION_META_PATH', fd_storage_path('storage/session_meta.json'));
+define('FD_BOT_POOL_PATH', fd_storage_path('storage/bot_pool.json'));
 
 /**
  * Optional DNS resolution mapping for curl (e.g. "example.com:443:1.2.3.4").
@@ -243,11 +244,37 @@ function fd_clear_bot_id(): void
     }
 }
 
-function fd_has_local_session(): bool
+function fd_get_bot_session_path(string $botId = ''): string
 {
-    // Session files alone are enough. Missing bot_id.txt (old APK / partial
-    // write) must not look like a logout after refresh.
-    return is_file(FD_SESSION_PATH) || is_dir(FD_SESSION_PATH);
+    $botId = trim($botId);
+    if ($botId === '') {
+        return FD_SESSION_PATH;
+    }
+    return fd_storage_path('storage/sessions/' . preg_replace('/[^a-zA-Z0-9_\-]/', '', $botId) . '/session.madeline');
+}
+
+function fd_has_local_session(string $botId = ''): bool
+{
+    $botId = trim($botId);
+    if ($botId !== '') {
+        $sess = fd_get_bot_session_path($botId);
+        return is_file($sess) || is_dir($sess);
+    }
+    if (is_file(FD_SESSION_PATH) || is_dir(FD_SESSION_PATH)) {
+        return true;
+    }
+    // Check if any pool bot has a valid session
+    $pool = fd_get_bot_pool();
+    foreach ($pool as $b) {
+        $bId = trim((string)($b['bot_id'] ?? ''));
+        if ($bId !== '') {
+            $sess = fd_get_bot_session_path($bId);
+            if (is_file($sess) || is_dir($sess)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 function fd_load_session_meta(): array
@@ -275,6 +302,15 @@ function fd_save_session_meta(string $botId, string $botUsername = '', string $b
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         LOCK_EX
     );
+    // Sync into bot pool
+    fd_add_pool_bot([
+        'bot_id' => $botId,
+        'bot_username' => $botUsername,
+        'bot_name' => $botName,
+        'is_active' => true,
+        'status' => 'online',
+        'updated_at' => time(),
+    ]);
     // Remove the old one-line cache so bot identity lives in one file.
     fd_clear_bot_id();
 }
@@ -284,6 +320,142 @@ function fd_clear_session_meta(): void
     if (is_file(FD_SESSION_META_PATH)) {
         @unlink(FD_SESSION_META_PATH);
     }
+}
+
+/**
+ * ── Bot Pool Management Helpers ──────────────────────────────────────────
+ */
+function fd_get_bot_pool(): array
+{
+    $path = FD_BOT_POOL_PATH;
+    if (!is_file($path)) {
+        return [];
+    }
+    $data = @json_decode((string) @file_get_contents($path), true);
+    return is_array($data) ? $data : [];
+}
+
+function fd_save_bot_pool(array $pool): void
+{
+    $dir = dirname(FD_BOT_POOL_PATH);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    @file_put_contents(
+        FD_BOT_POOL_PATH,
+        json_encode(array_values($pool), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+        LOCK_EX
+    );
+}
+
+function fd_add_pool_bot(array $botData): array
+{
+    $botId = trim((string) ($botData['bot_id'] ?? ''));
+    if ($botId === '') {
+        return [];
+    }
+    $pool = fd_get_bot_pool();
+    $found = false;
+    foreach ($pool as $idx => $item) {
+        if ((string) ($item['bot_id'] ?? '') === $botId) {
+            $pool[$idx] = array_merge($item, $botData);
+            $found = true;
+            break;
+        }
+    }
+    if (!$found) {
+        $pool[] = array_merge([
+            'bot_id' => $botId,
+            'bot_username' => '',
+            'bot_name' => '',
+            'status' => 'online',
+            'added_at' => time(),
+            'updated_at' => time(),
+        ], $botData);
+    }
+    fd_save_bot_pool($pool);
+    return $pool;
+}
+
+function fd_remove_pool_bot(string $botId): array
+{
+    $botId = trim($botId);
+    if ($botId === '') {
+        return fd_get_bot_pool();
+    }
+    $pool = fd_get_bot_pool();
+    $newPool = [];
+    foreach ($pool as $item) {
+        if ((string) ($item['bot_id'] ?? '') !== $botId) {
+            $newPool[] = $item;
+        }
+    }
+    fd_save_bot_pool($newPool);
+    // Delete session files for this bot
+    $botSessDir = dirname(fd_get_bot_session_path($botId));
+    if (is_dir($botSessDir)) {
+        fd_clear_session_directory($botSessDir);
+    }
+    // If active bot was removed, update session meta to another available bot
+    $currentActive = fd_get_bot_id();
+    if ($currentActive === $botId) {
+        if (!empty($newPool)) {
+            $first = $newPool[0];
+            fd_save_session_meta(
+                (string) ($first['bot_id'] ?? ''),
+                (string) ($first['bot_username'] ?? ''),
+                (string) ($first['bot_name'] ?? '')
+            );
+        } else {
+            fd_clear_session_meta();
+            fd_clear_session();
+        }
+    }
+    return $newPool;
+}
+
+/**
+ * Pick an available bot from the pool using round-robin / least-busy / cooldown strategy.
+ */
+function fd_pick_pool_bot(): array
+{
+    $pool = fd_get_bot_pool();
+    $activeBotId = fd_get_bot_id();
+    $validBots = [];
+
+    foreach ($pool as $b) {
+        $bId = trim((string) ($b['bot_id'] ?? ''));
+        if ($bId === '') {
+            continue;
+        }
+        $cooldownUntil = (int) ($b['cooldown_until'] ?? 0);
+        if ($cooldownUntil > time()) {
+            continue; // Skip flooded / cooldown bots
+        }
+        $hasSess = fd_has_local_session($bId) || ($bId === $activeBotId && fd_has_local_session());
+        if ($hasSess) {
+            $validBots[] = $b;
+        }
+    }
+
+    if (empty($validBots)) {
+        // Fallback to active bot if available
+        if ($activeBotId !== '') {
+            $meta = fd_load_session_meta();
+            return [
+                'bot_id' => $activeBotId,
+                'bot_username' => (string) ($meta['bot_username'] ?? ''),
+                'bot_name' => (string) ($meta['bot_name'] ?? ''),
+            ];
+        }
+        return [];
+    }
+
+    // Round-robin selection using file pointer / static tracker
+    static $rrIndex = 0;
+    $picked = $validBots[$rrIndex % count($validBots)];
+    $rrIndex++;
+    return $picked;
 }
 
 function fd_is_local_request(): bool
@@ -761,9 +933,10 @@ function fd_save_cached_api_credentials(int $apiId, string $apiHash): void
  *
  * @param string|null $botToken Optional bot token for initial login / re-login.
  * @param array       $overrides Optional api_id/api_hash overrides (emergency only).
+ * @param string      $targetBotId Optional target bot_id to select dedicated session directory.
  * @return array [MadelineProto|null, string|null error]
  */
-function fd_boot_madeline(?string $botToken = null, array $overrides = []): array
+function fd_boot_madeline(?string $botToken = null, array $overrides = [], string $targetBotId = ''): array
 {
     // ── Suppress direct echo from polyfill.php ──────────────────────────────
     // polyfill.php is loaded as a Composer autoload file (autoload_files.php),
@@ -774,13 +947,18 @@ function fd_boot_madeline(?string $botToken = null, array $overrides = []): arra
     // Ensure in-process execution mode is forced across all platforms (Linux/Raspberry Pi/macOS/Windows)
     $_GET['MadelineSelfRestart'] = '1';
 
+    $sessionPath = fd_get_bot_session_path($targetBotId);
+    $sessionDir = dirname($sessionPath);
+
     $bootObLevel = ob_get_level();
     $bootEntryObLevel = $bootObLevel;
     ob_start();
     fd_log('fd_boot_madeline entry', [
         'ob_level' => $bootObLevel,
         'bot_token_provided' => $botToken !== null && $botToken !== '',
-        'session_exists' => is_dir(FD_SESSION_PATH) || is_file(FD_SESSION_PATH),
+        'target_bot_id' => $targetBotId,
+        'session_path' => $sessionPath,
+        'session_exists' => is_dir($sessionPath) || is_file($sessionPath),
     ]);
 
     // Check if MadelineProto is already loaded (e.g., via routing-level pre-load).
@@ -840,9 +1018,6 @@ function fd_boot_madeline(?string $botToken = null, array $overrides = []): arra
         }
         return [null, 'No API credentials available. Login via the settings page to fetch from WordPress.'];
     }
-
-    $sessionPath = FD_SESSION_PATH;
-    $sessionDir = dirname($sessionPath);
 
     if (!is_dir($sessionDir)) {
         @mkdir($sessionDir, 0777, true);
@@ -981,24 +1156,11 @@ function fd_boot_madeline(?string $botToken = null, array $overrides = []): arra
 }
 
 /**
- * Clear MadelineProto session files from storage.
+ * Safely delete a session directory with Windows lock-handling and retries.
  */
-function fd_clear_session(): void
+function fd_clear_session_directory(string $sessionPath): void
 {
-    $sessionPath = FD_SESSION_PATH;
-
-    // MadelineProto stores sessions as directories with nested files.
-    // Use recursive deletion to remove everything, with retries for
-    // Windows file-lock edge cases.
     if (is_dir($sessionPath)) {
-        // Phase 1: native PHP recursive deletion
-        //
-        // MadelineProto sets a custom exceptionErrorHandler that converts PHP
-        // warnings (even from @-suppressed calls) into exceptions. This means
-        // @rmdir() or @unlink() on locked files will throw before Phase 2
-        // gets a chance to execute. Wrap the loop body in try/catch so every
-        // retry attempt completes and Phase 2 (rename-then-delete fallback)
-        // is reached when all 3 attempts fail.
         $deleted = false;
         for ($attempt = 0; $attempt < 3; $attempt++) {
             try {
@@ -1013,46 +1175,26 @@ function fd_clear_session(): void
                         @unlink($fileinfo->getRealPath());
                     }
                 }
-                // Attempt to remove the root session directory
                 if (@rmdir($sessionPath)) {
                     $deleted = true;
                     break;
                 }
             } catch (\Throwable $e) {
-                // @rmdir/@unlink warning caught from MadelineProto's error
-                // handler — this is expected when files are locked by another
-                // FrankenPHP worker. Continue to next retry attempt.
             }
-            // Short delay before retry (some locks may be transient)
             if ($attempt < 2) {
                 usleep(200000); // 200ms
             }
         }
 
-        // Phase 2: rename-then-delete fallback (cross-platform)
-        //
-        // When Phase 1 fails, some files inside the session directory are still
-        // locked by another FrankenPHP worker. Attempt a directory-level rename
-        // which works on Linux/macOS even with open file handles.
-        //
-        // On Windows, rename() on a directory fails (Access denied) when child
-        // files are open — this is expected. The @rename() is wrapped in a
-        // try/catch because MadelineProto's exceptionErrorHandler converts
-        // suppressed warnings into exceptions. If rename fails, we silently
-        // fall through — all unlockable files were already removed by Phase 1,
-        // so the session is effectively cleared.
         if (!$deleted) {
             $tempName = $sessionPath . '.obsolete.' . getmypid() . '.' . time();
             $renamed = false;
             try {
                 $renamed = @rename($sessionPath, $tempName);
             } catch (\Throwable $e) {
-                // Windows: rename on a directory with open child files fails.
-                // This is expected — Phase 1 already removed unlockable files.
                 $renamed = false;
             }
             if ($renamed) {
-                // Session is now cleared. Best-effort cleanup of the renamed directory.
                 try {
                     $files = new RecursiveIteratorIterator(
                         new RecursiveDirectoryIterator($tempName, RecursiveDirectoryIterator::SKIP_DOTS),
@@ -1067,8 +1209,6 @@ function fd_clear_session(): void
                     }
                     @rmdir($tempName);
                 } catch (\Throwable $e) {
-                    // Non-critical: renamed directory is inert and will be
-                    // cleaned up on a subsequent clear_session() call.
                 }
             }
         }
@@ -1076,11 +1216,25 @@ function fd_clear_session(): void
         @unlink($sessionPath);
     }
 
-    // Also clean up any top-level lock artifacts and cached credentials
     $staleLock = $sessionPath . '.lock';
     if (is_file($staleLock)) {
         @unlink($staleLock);
     }
+}
+
+/**
+ * Clear MadelineProto session files from storage.
+ */
+function fd_clear_session(string $botId = ''): void
+{
+    if ($botId !== '') {
+        $path = fd_get_bot_session_path($botId);
+        fd_clear_session_directory(is_dir($path) ? $path : dirname($path));
+        return;
+    }
+
+    $sessionPath = FD_SESSION_PATH;
+    fd_clear_session_directory($sessionPath);
 
     // Clear cached API credentials — forces re-fetch from WordPress on next login
     $credsCache = fd_storage_path('storage/api_credentials.json');
@@ -3607,6 +3761,7 @@ if (str_starts_with($path, '/api/')) {
         // but WordPress resolve-file fails with "bot_id not found". Treat that
         // as incomplete login so the frontend shows the token prompt.
         $hasSession = fd_has_local_session() && $botId !== '';
+        $pool = fd_get_bot_pool();
 
         fd_json([
             'ok' => 1,
@@ -3615,6 +3770,192 @@ if (str_starts_with($path, '/api/')) {
             'bot_username' => $hasSession ? (string) ($meta['bot_username'] ?? '') : '',
             'bot_name' => $hasSession ? (string) ($meta['bot_name'] ?? '') : '',
             'api_secret' => $hasSession ? fd_get_api_secret() : '',
+            'bot_count' => count($pool),
+            'bot_pool' => $pool,
+        ]);
+    }
+
+    // ── GET /api/bots — list all configured bots in the pool ─────────────────
+    if ($path === '/api/bots' && $method === 'GET') {
+        $pool = fd_get_bot_pool();
+        $activeId = fd_get_bot_id();
+        $list = [];
+        foreach ($pool as $b) {
+            $bId = (string)($b['bot_id'] ?? '');
+            $hasSess = fd_has_local_session($bId) || ($bId === $activeId && fd_has_local_session());
+            $list[] = array_merge($b, [
+                'has_session' => $hasSess,
+                'is_active' => $bId === $activeId,
+            ]);
+        }
+        fd_json([
+            'ok' => 1,
+            'active_bot_id' => $activeId,
+            'total_bots' => count($list),
+            'bots' => $list,
+        ]);
+    }
+
+    // ── POST /api/bots/add — add one or multiple bot tokens to the pool ──────
+    if ($path === '/api/bots/add' && $method === 'POST') {
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($input)) {
+            fd_json(['ok' => 0, 'message' => 'Invalid JSON body'], 400);
+        }
+
+        $tokens = [];
+        if (!empty($input['bot_token'])) {
+            $tokens[] = trim((string) $input['bot_token']);
+        } elseif (!empty($input['tokens']) && is_array($input['tokens'])) {
+            foreach ($input['tokens'] as $t) {
+                $t = trim((string) $t);
+                if ($t !== '') {
+                    $tokens[] = $t;
+                }
+            }
+        } elseif (!empty($input['tokens_text'])) {
+            // Support newline / space separated tokens
+            $parts = preg_split('/[\r\n\s,]+/', (string) $input['tokens_text']);
+            foreach ($parts as $p) {
+                $p = trim($p);
+                if ($p !== '') {
+                    $tokens[] = $p;
+                }
+            }
+        }
+
+        if (empty($tokens)) {
+            fd_json(['ok' => 0, 'message' => 'bot_token or tokens array is required.'], 400);
+        }
+
+        $results = [];
+        $addedCount = 0;
+
+        foreach ($tokens as $token) {
+            // Extract numeric prefix for quick bot_id estimation
+            $tempBotId = '';
+            if (preg_match('/^(\d+):/', $token, $m)) {
+                $tempBotId = $m[1];
+            }
+
+            fd_log('adding bot to pool', ['token_prefix' => substr($token, 0, 8) . '...']);
+
+            // Boot MadelineProto for this specific bot session
+            [$madeline, $error] = fd_boot_madeline($token, [], $tempBotId);
+
+            if (!$madeline) {
+                $results[] = [
+                    'token_prefix' => substr($token, 0, 8) . '...',
+                    'ok' => 0,
+                    'error' => $error ?: 'Failed to login',
+                ];
+                continue;
+            }
+
+            try {
+                $self = $madeline->getSelf();
+                $bId = (string) ($self['id'] ?? $tempBotId);
+                $bUser = (string) ($self['username'] ?? '');
+                $bName = (string) ($self['first_name'] ?? '');
+
+                // Ensure session directory is moved to specific bot_id folder if needed
+                if ($tempBotId === '' || $tempBotId !== $bId) {
+                    $oldPath = fd_get_bot_session_path($tempBotId);
+                    $newPath = fd_get_bot_session_path($bId);
+                    if ($oldPath !== $newPath && (is_dir($oldPath) || is_file($oldPath))) {
+                        @rename($oldPath, $newPath);
+                    }
+                }
+
+                $botEntry = [
+                    'bot_id' => $bId,
+                    'bot_username' => $bUser,
+                    'bot_name' => $bName,
+                    'status' => 'online',
+                    'updated_at' => time(),
+                ];
+
+                fd_add_pool_bot($botEntry);
+
+                // If no active bot is set, set this as primary active bot
+                if (fd_get_bot_id() === '') {
+                    fd_save_session_meta($bId, $bUser, $bName);
+                }
+
+                $results[] = [
+                    'ok' => 1,
+                    'bot_id' => $bId,
+                    'bot_username' => $bUser,
+                    'bot_name' => $bName,
+                ];
+                $addedCount++;
+            } catch (\Throwable $e) {
+                $results[] = [
+                    'token_prefix' => substr($token, 0, 8) . '...',
+                    'ok' => 0,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        fd_json([
+            'ok' => $addedCount > 0 ? 1 : 0,
+            'added_count' => $addedCount,
+            'results' => $results,
+            'pool' => fd_get_bot_pool(),
+        ], $addedCount > 0 ? 200 : 400);
+    }
+
+    // ── POST /api/bots/remove — remove a bot from the pool ───────────────────
+    if ($path === '/api/bots/remove' && $method === 'POST') {
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($input)) {
+            fd_json(['ok' => 0, 'message' => 'Invalid JSON body'], 400);
+        }
+        $botId = trim((string) ($input['bot_id'] ?? ''));
+        if ($botId === '') {
+            fd_json(['ok' => 0, 'message' => 'bot_id is required.'], 400);
+        }
+        $updatedPool = fd_remove_pool_bot($botId);
+        fd_json([
+            'ok' => 1,
+            'message' => 'Bot removed from pool.',
+            'pool' => $updatedPool,
+            'active_bot_id' => fd_get_bot_id(),
+        ]);
+    }
+
+    // ── POST /api/bots/set-active — set primary active bot in pool ───────────
+    if ($path === '/api/bots/set-active' && $method === 'POST') {
+        $input = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($input)) {
+            fd_json(['ok' => 0, 'message' => 'Invalid JSON body'], 400);
+        }
+        $botId = trim((string) ($input['bot_id'] ?? ''));
+        if ($botId === '') {
+            fd_json(['ok' => 0, 'message' => 'bot_id is required.'], 400);
+        }
+        $pool = fd_get_bot_pool();
+        $target = null;
+        foreach ($pool as $b) {
+            if ((string)($b['bot_id'] ?? '') === $botId) {
+                $target = $b;
+                break;
+            }
+        }
+        if (!$target) {
+            fd_json(['ok' => 0, 'message' => 'Bot ID not found in pool.'], 404);
+        }
+        fd_save_session_meta(
+            (string)($target['bot_id'] ?? ''),
+            (string)($target['bot_username'] ?? ''),
+            (string)($target['bot_name'] ?? '')
+        );
+        fd_json([
+            'ok' => 1,
+            'active_bot_id' => $botId,
+            'bot_username' => (string)($target['bot_username'] ?? ''),
+            'bot_name' => (string)($target['bot_name'] ?? ''),
         ]);
     }
 
@@ -3684,20 +4025,24 @@ if (str_starts_with($path, '/api/')) {
 
         fd_log('botlogin start', ['token_prefix' => substr($botToken, 0, 8) . '...']);
 
-        // Logging in with a new token — clear any existing session so
-        // fd_boot_madeline() cannot resume the old one and must call
-        // botLogin() with the newly provided token.
-        fd_clear_session();
+        $tempBotId = '';
+        if (preg_match('/^(\d+):/', $botToken, $m)) {
+            $tempBotId = $m[1];
+        }
+
+        // Clean only this bot's existing partitioned session to force fresh login
+        if ($tempBotId !== '') {
+            fd_clear_session($tempBotId);
+        } else {
+            fd_clear_session();
+        }
 
         // ═══ [DIAGNOSTIC] Capture any stray output before fd_boot_madeline ═══
         $diagObLevel = ob_get_level();
-        // If there's already output in the buffer from fd_ensure_autoload or
-        // other early code, log its length so we can detect polyfill.php leaks.
         $preBootOutput = '';
         while (ob_get_level() > 0) {
             $preBootOutput .= ob_get_clean();
         }
-        // Restore buffering to how it was — fd_boot_madeline will start its own.
         while (ob_get_level() < $diagObLevel) {
             ob_start();
         }
@@ -3708,13 +4053,9 @@ if (str_starts_with($path, '/api/')) {
             ]);
         }
 
-        // API credentials are resolved internally by fd_boot_madeline():
-        //   1. From local cache (storage/api_credentials.json)
-        //   2. By fetching from WordPress (encrypted with bot token)
-        // Emergency overrides can still be passed via the $overrides parameter
-        // but the frontend no longer sends them.
+        // API credentials are resolved internally by fd_boot_madeline()
         $tBoot0 = microtime(true);
-        [$madeline, $error] = fd_boot_madeline($botToken);
+        [$madeline, $error] = fd_boot_madeline($botToken, [], $tempBotId);
         $tBoot1 = microtime(true);
         fd_log('fd_boot_madeline timing', ['ms' => round(($tBoot1 - $tBoot0) * 1000)]);
 
@@ -3739,10 +4080,34 @@ if (str_starts_with($path, '/api/')) {
 
         try {
             $self = $madeline->getSelf();
-            $botId = (string) ($self['id'] ?? '');
+            $botId = (string) ($self['id'] ?? $tempBotId);
             if ($botId === '') {
                 fd_json(['ok' => 0, 'message' => 'Login succeeded but bot ID is empty.'], 500);
             }
+
+            // Ensure session directory is organized under specific bot_id folder
+            if ($tempBotId === '' || $tempBotId !== $botId) {
+                $oldPath = fd_get_bot_session_path($tempBotId);
+                $newPath = fd_get_bot_session_path($botId);
+                if ($oldPath !== $newPath && (is_dir($oldPath) || is_file($oldPath))) {
+                    @rename($oldPath, $newPath);
+                }
+            }
+
+            $botUsername = (string) ($self['username'] ?? '');
+            $botName = (string) ($self['first_name'] ?? '');
+
+            // Register into bot pool
+            fd_add_pool_bot([
+                'bot_id' => $botId,
+                'bot_username' => $botUsername,
+                'bot_name' => $botName,
+                'status' => 'online',
+                'updated_at' => time(),
+            ]);
+
+            // Save primary active bot meta
+            fd_save_session_meta($botId, $botUsername, $botName);
 
             // ═══ [DIAGNOSTIC] Check output buffer state before fd_json ═══
             $bufBeforeJson = '';
@@ -3758,18 +4123,14 @@ if (str_starts_with($path, '/api/')) {
             // Restore output buffering so fd_json can set headers
             ob_start();
 
-            fd_log('botlogin successful', ['bot_id' => $botId, 'bot_username' => $self['username'] ?? '']);
-            fd_save_session_meta(
-                $botId,
-                (string) ($self['username'] ?? ''),
-                (string) ($self['first_name'] ?? '')
-            );
+            fd_log('botlogin successful', ['bot_id' => $botId, 'bot_username' => $botUsername]);
             fd_json([
                 'ok' => 1,
                 'bot_id' => $botId,
-                'bot_username' => (string) ($self['username'] ?? ''),
-                'bot_name' => (string) ($self['first_name'] ?? ''),
+                'bot_username' => $botUsername,
+                'bot_name' => $botName,
                 'api_secret' => fd_get_api_secret(),
+                'pool' => fd_get_bot_pool(),
             ]);
         } catch (Throwable $throwable) {
             fd_log('botlogin getSelf failed', ['error' => $throwable->getMessage()]);
@@ -3900,11 +4261,18 @@ if (str_starts_with($path, '/api/')) {
             ], 403);
         }
 
+        // If botId is not explicitly provided, pick from the pool for connection balancing
+        if ($botId === '') {
+            $pickedBot = fd_pick_pool_bot();
+            if (!empty($pickedBot['bot_id'])) {
+                $botId = (string) $pickedBot['bot_id'];
+            } else {
+                $botId = $activeBotId;
+            }
+        }
+
         if ($fileId === '') {
             if ($shortCode !== '') {
-                if ($botId === '') {
-                    $botId = $activeBotId;
-                }
                 $resolved = fd_resolve_shortcode($shortCode, $botId);
                 $fileId = trim((string) ($resolved['file_id_mt'] ?? $resolved['file_id'] ?? ''));
                 $fileSize = (int) ($resolved['file_size'] ?? $fileSize);
@@ -3912,23 +4280,35 @@ if (str_starts_with($path, '/api/')) {
                 $fileMime = trim((string) ($resolved['mime'] ?? $resolved['file_type'] ?? $fileMime));
 
                 if ($fileId === '') {
-                    $errMsg = !empty($resolved['message'])
-                        ? (string) $resolved['message']
-                        : (!empty($resolved['description']) ? (string) $resolved['description'] : 'File source is unpopulated, expired, or missing.');
-
-                    $statusCode = 404;
-                    if (stripos($errMsg, 'not allowed') !== false || stripos($errMsg, 'unauthorized') !== false || stripos($errMsg, 'forbidden') !== false) {
-                        $statusCode = 403;
+                    // Fallback to activeBotId if different from picked bot
+                    if ($botId !== $activeBotId && $activeBotId !== '') {
+                        $botId = $activeBotId;
+                        $resolved = fd_resolve_shortcode($shortCode, $botId);
+                        $fileId = trim((string) ($resolved['file_id_mt'] ?? $resolved['file_id'] ?? ''));
+                        $fileSize = (int) ($resolved['file_size'] ?? $fileSize);
+                        $fileName = trim((string) ($resolved['title'] ?? $resolved['file_name'] ?? $fileName));
+                        $fileMime = trim((string) ($resolved['mime'] ?? $resolved['file_type'] ?? $fileMime));
                     }
 
-                    header('Cache-Control: no-cache, no-store, must-revalidate');
-                    header('Connection: close');
-                    fd_json([
-                        'ok' => 0,
-                        'message' => $errMsg,
-                        'short_code' => $shortCode,
-                        'bot_id' => $botId,
-                    ], $statusCode);
+                    if ($fileId === '') {
+                        $errMsg = !empty($resolved['message'])
+                            ? (string) $resolved['message']
+                            : (!empty($resolved['description']) ? (string) $resolved['description'] : 'File source is unpopulated, expired, or missing.');
+
+                        $statusCode = 404;
+                        if (stripos($errMsg, 'not allowed') !== false || stripos($errMsg, 'unauthorized') !== false || stripos($errMsg, 'forbidden') !== false) {
+                            $statusCode = 403;
+                        }
+
+                        header('Cache-Control: no-cache, no-store, must-revalidate');
+                        header('Connection: close');
+                        fd_json([
+                            'ok' => 0,
+                            'message' => $errMsg,
+                            'short_code' => $shortCode,
+                            'bot_id' => $botId,
+                        ], $statusCode);
+                    }
                 }
             }
         }
@@ -3953,8 +4333,12 @@ if (str_starts_with($path, '/api/')) {
             ], 400);
         }
 
-        // fd_boot_madeline() handles its own output buffering internally.
-        [$madeline, $error] = fd_boot_madeline();
+        // Boot MadelineProto for this specific bot session
+        [$madeline, $error] = fd_boot_madeline(null, [], $botId);
+        if (!$madeline && $botId !== $activeBotId) {
+            // Fallback to active bot session
+            [$madeline, $error] = fd_boot_madeline(null, [], '');
+        }
 
         if (!$madeline) {
             fd_log('download failed — no valid session', [

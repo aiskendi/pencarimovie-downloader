@@ -72,7 +72,7 @@
         <!-- Token input section — shown in setup mode (no session) -->
         <div id="settingsTokenSection">
           <h2 id="settingsTitle" class="settings-gate__title">
-            🔐 PencariMovie
+            ⚙️ Settings
           </h2>
           <p id="settingsDesc" class="settings-gate__desc">
             Enter your Telegram Bot Token to connect.
@@ -115,23 +115,98 @@
           id="settingsConnectedSection"
           class="settings-gate__connected-info hidden"
         >
-          <div class="settings-gate__connected-bot">
-            <div class="settings-gate__bot-icon">🤖</div>
-            <div class="settings-gate__bot-name" id="settingsBotName">—</div>
-            <div class="settings-gate__bot-username" id="settingsBotUsername">
-              —
+          <h2 class="settings-gate__title" style="margin-bottom: 12px;">
+            ⚙️ Settings
+          </h2>
+
+          <!-- Multi-Bot Manager UI -->
+          <div class="settings-gate__bots-container">
+            <div class="settings-gate__bots-header">
+              <span class="settings-gate__bots-title"
+                >🤖 Bot Pool (<span id="botPoolCount">1</span>)</span
+              >
+              <button
+                type="button"
+                id="toggleAddBotsBtn"
+                class="settings-gate__link"
+                style="font-size: 0.8rem; color: var(--accent); cursor: pointer; white-space: nowrap;"
+              >
+                + Add More Bots
+              </button>
+            </div>
+
+            <!-- Bot token bulk adder (collapsible) -->
+            <div id="addBotsSection" class="hidden" style="margin-bottom: 12px; width: 100%; box-sizing: border-box;">
+              <textarea
+                id="bulkBotTokensInput"
+                class="settings-gate__input"
+                style="
+                  height: 65px;
+                  font-size: 0.78rem;
+                  font-family: monospace;
+                  resize: vertical;
+                  box-sizing: border-box;
+                "
+                placeholder="Paste 1 or more bot tokens (one per line)..."
+              ></textarea>
+              <div style="display: flex; gap: 6px; margin-top: 6px; width: 100%; box-sizing: border-box;">
+                <button
+                  type="button"
+                  id="submitAddBotsBtn"
+                  class="settings-gate__btn"
+                  style="padding: 6px 12px; font-size: 0.8rem; flex: 1"
+                >
+                  Connect Bots
+                </button>
+                <button
+                  type="button"
+                  id="cancelAddBotsBtn"
+                  class="settings-gate__btn"
+                  style="
+                    padding: 6px 12px;
+                    font-size: 0.8rem;
+                    background: rgba(255, 255, 255, 0.1);
+                    color: #ccc;
+                  "
+                >
+                  Cancel
+                </button>
+              </div>
+              <div
+                id="addBotsStatus"
+                style="font-size: 0.78rem; margin-top: 4px; color: #ff6b35; word-break: break-word;"
+              ></div>
+            </div>
+
+            <div id="botPoolList" class="settings-gate__bots-list">
+              <!-- Bot items rendered dynamically -->
             </div>
           </div>
-          <button
-            id="settingsDisconnectBtn"
-            class="settings-gate__btn settings-gate__btn--danger"
-          >
-            Disconnect Bot
-          </button>
 
-          <div class="settings-gate__addon-box">
+          <div style="display: flex; gap: 8px; margin-top: 14px">
+            <button
+              id="settingsDisconnectBtn"
+              class="settings-gate__btn settings-gate__btn--danger"
+              style="flex: 1"
+            >
+              Disconnect All
+            </button>
+          </div>
+
+          <div class="settings-gate__addon-box" style="margin-top: 14px">
             <span>📺 Want to stream in Nuvio?</span>
-            <button type="button" id="settingsOpenAddonBtn" class="settings-gate__addon-link" style="background: none; border: none; cursor: pointer; font-size: inherit; font-family: inherit;">
+            <button
+              type="button"
+              id="settingsOpenAddonBtn"
+              class="settings-gate__addon-link"
+              style="
+                background: none;
+                border: none;
+                cursor: pointer;
+                font-size: inherit;
+                font-family: inherit;
+              "
+            >
               View Nuvio Addon <i class="fas fa-external-link-alt"></i>
             </button>
           </div>
@@ -346,31 +421,58 @@
           ✕
         </button>
 
-        <h2 class="settings-gate__title">
-          🧩 Nuvio Addon
-        </h2>
+        <h2 class="settings-gate__title">🧩 Nuvio Addon</h2>
         <p class="settings-gate__desc">
           Stream movies, series from Telegram server directly in Nuvio
         </p>
 
         <!-- Wi-Fi / LAN Manifest Field (Recommended for External Devices) -->
         <div class="settings-gate__field" id="addonLanField">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <label class="settings-gate__label" for="addonManifestLanInput" style="margin-bottom: 0;">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 6px;
+            "
+          >
+            <label
+              class="settings-gate__label"
+              for="addonManifestLanInput"
+              style="margin-bottom: 0"
+            >
               📡 Wi-Fi / LAN Manifest (TV, Phone, Tablet)
             </label>
-            <span style="font-size: 0.72rem; background: rgba(0, 210, 106, 0.15); color: #00d26a; padding: 2px 6px; border-radius: 6px; font-weight: 600;">Recommended</span>
+            <span
+              style="
+                font-size: 0.72rem;
+                background: rgba(0, 210, 106, 0.15);
+                color: #00d26a;
+                padding: 2px 6px;
+                border-radius: 6px;
+                font-weight: 600;
+              "
+              >Recommended</span
+            >
           </div>
-          <div style="display: flex; gap: 8px;">
+          <div style="display: flex; gap: 8px">
             <input
               type="text"
               id="addonManifestLanInput"
               class="settings-gate__input"
-              style="color: #00d26a; font-family: monospace; font-size: 0.88rem;"
+              style="color: #00d26a; font-family: monospace; font-size: 0.88rem"
               readonly
               value=""
             />
-            <button id="copyAddonManifestLanBtn" class="settings-gate__btn" style="white-space: nowrap; padding: 10px 16px; font-size: 0.88rem;">
+            <button
+              id="copyAddonManifestLanBtn"
+              class="settings-gate__btn"
+              style="
+                white-space: nowrap;
+                padding: 10px 16px;
+                font-size: 0.88rem;
+              "
+            >
               📋 Copy
             </button>
           </div>
@@ -378,22 +480,53 @@
 
         <!-- Localhost Manifest Field (This PC Only) -->
         <div class="settings-gate__field" id="addonLocalField">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <label class="settings-gate__label" for="addonManifestInput" style="margin-bottom: 0;">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 6px;
+            "
+          >
+            <label
+              class="settings-gate__label"
+              for="addonManifestInput"
+              style="margin-bottom: 0"
+            >
               💻 Localhost Manifest (This Device Only)
             </label>
-            <span style="font-size: 0.72rem; background: rgba(255, 255, 255, 0.08); color: #aaa; padding: 2px 6px; border-radius: 6px; font-weight: 600;">Local</span>
+            <span
+              style="
+                font-size: 0.72rem;
+                background: rgba(255, 255, 255, 0.08);
+                color: #aaa;
+                padding: 2px 6px;
+                border-radius: 6px;
+                font-weight: 600;
+              "
+              >Local</span
+            >
           </div>
-          <div style="display: flex; gap: 8px;">
+          <div style="display: flex; gap: 8px">
             <input
               type="text"
               id="addonManifestInput"
               class="settings-gate__input"
-              style="color: #bbb; font-family: monospace; font-size: 0.88rem;"
+              style="color: #bbb; font-family: monospace; font-size: 0.88rem"
               readonly
               value=""
             />
-            <button id="copyAddonManifestBtn" class="settings-gate__btn" style="background: rgba(255,255,255,0.1); color: #ddd; white-space: nowrap; padding: 10px 16px; font-size: 0.88rem;">
+            <button
+              id="copyAddonManifestBtn"
+              class="settings-gate__btn"
+              style="
+                background: rgba(255, 255, 255, 0.1);
+                color: #ddd;
+                white-space: nowrap;
+                padding: 10px 16px;
+                font-size: 0.88rem;
+              "
+            >
               📋 Copy
             </button>
           </div>
@@ -403,15 +536,51 @@
           ✓ Copied to clipboard!
         </div>
 
-        <div class="instructions" style="margin-top: 18px; text-align: left; background: rgba(0,0,0,0.3); padding: 14px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
-          <div style="font-size: 0.88rem; font-weight: 700; color: #fff; margin-bottom: 8px;">
+        <div
+          class="instructions"
+          style="
+            margin-top: 18px;
+            text-align: left;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 14px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+          "
+        >
+          <div
+            style="
+              font-size: 0.88rem;
+              font-weight: 700;
+              color: #fff;
+              margin-bottom: 8px;
+            "
+          >
             🚀 How to install in Nuvio:
           </div>
-          <ol style="margin-left: 18px; color: #aaa; font-size: 0.82rem; line-height: 1.5;">
-            <li style="margin-bottom: 4px;">Connect your Android TV, phone, or tablet to the <strong>same Wi-Fi network</strong>.</li>
-            <li style="margin-bottom: 4px;">Open the <strong>Nuvio</strong> app.</li>
-            <li style="margin-bottom: 4px;">Go to <strong>profile</strong> &rarr; <strong>content & discovery</strong> &rarr; <strong>addons</strong>.</li>
-            <li>Paste the <strong>Wi-Fi / LAN Manifest URL</strong> and click <strong>Install addon</strong>.</li>
+          <ol
+            style="
+              margin-left: 18px;
+              color: #aaa;
+              font-size: 0.82rem;
+              line-height: 1.5;
+            "
+          >
+            <li style="margin-bottom: 4px">
+              Connect your Android TV, phone, or tablet to the
+              <strong>same Wi-Fi network</strong>.
+            </li>
+            <li style="margin-bottom: 4px">
+              Open the <strong>Nuvio</strong> app.
+            </li>
+            <li style="margin-bottom: 4px">
+              Go to <strong>profile</strong> &rarr;
+              <strong>content & discovery</strong> &rarr;
+              <strong>addons</strong>.
+            </li>
+            <li>
+              Paste the <strong>Wi-Fi / LAN Manifest URL</strong> and click
+              <strong>Install addon</strong>.
+            </li>
           </ol>
         </div>
       </div>

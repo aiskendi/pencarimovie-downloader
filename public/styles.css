@@ -23,16 +23,22 @@
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .settings-gate__card {
-  width: min(440px, 100%);
+  width: min(460px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   background: #1a1a2e;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
-  padding: 36px 28px 28px;
+  padding: 32px 24px 24px;
   text-align: center;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
 .settings-gate__title {
@@ -199,13 +205,15 @@
 .settings-gate__connected-info {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 28px;
-  padding: 12px 0 8px;
+  align-items: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  gap: 20px;
+  padding: 8px 0 4px;
 }
 
 .settings-gate__addon-box {
-  margin-top: 10px;
+  margin-top: 8px;
   padding-top: 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
@@ -215,6 +223,7 @@
   font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.7);
   width: 100%;
+  box-sizing: border-box;
 }
 
 .settings-gate__addon-link {
@@ -236,24 +245,27 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  width: 100%;
 }
 
 .settings-gate__bot-icon {
   font-size: 2.4rem;
   line-height: 1;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .settings-gate__bot-name {
   font-size: 1.2rem;
   font-weight: 700;
   color: #fff;
+  word-break: break-word;
 }
 
 .settings-gate__bot-username {
   font-size: 0.92rem;
   color: rgba(255, 255, 255, 0.5);
+  word-break: break-all;
 }
 
 .settings-gate__btn--danger {
@@ -264,6 +276,228 @@
 .settings-gate__btn--danger:hover {
   background: #c92a2a;
   filter: brightness(1.05);
+}
+
+/* ─── Bot Pool Styles ────────────────────────────────────────── */
+
+.settings-gate__bots-container {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  text-align: left;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.settings-gate__bots-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-gate__bots-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-gate__bots-list {
+  max-height: 150px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 2px;
+}
+
+.bot-pool-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.bot-pool-item__info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+}
+
+.bot-pool-item__dot {
+  font-size: 0.65rem;
+  flex-shrink: 0;
+}
+
+.bot-pool-item__dot--active {
+  color: #51cf66;
+}
+
+.bot-pool-item__dot--inactive {
+  color: #aaa;
+}
+
+.bot-pool-item__name-wrap {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.bot-pool-item__name {
+  font-weight: 600;
+  color: #fff;
+}
+
+.bot-pool-item__user {
+  color: #aaa;
+  font-size: 0.72rem;
+  margin-left: 4px;
+}
+
+.bot-pool-item__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.bot-pool-item__badge {
+  font-size: 0.68rem;
+  background: rgba(81, 207, 102, 0.15);
+  color: #51cf66;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.bot-pool-item__set-btn {
+  background: none;
+  border: none;
+  color: var(--accent, #ff6b35);
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 2px 4px;
+  white-space: nowrap;
+}
+
+.bot-pool-item__set-btn:hover {
+  text-decoration: underline;
+}
+
+.bot-pool-item__remove-btn {
+  background: none;
+  border: none;
+  color: #ff6b6b;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+
+.bot-pool-item__remove-btn:hover {
+  color: #ff4949;
+}
+
+/* ─── Mobile Optimizations for Settings Gate ─────────────────── */
+
+@media (max-width: 600px) {
+  .settings-gate {
+    padding: 10px 8px;
+    align-items: center;
+  }
+
+  .settings-gate__card {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100vh - 20px);
+    padding: 20px 12px 16px;
+    border-radius: 14px;
+    box-sizing: border-box;
+  }
+
+  .settings-gate__title {
+    font-size: 1.3rem;
+  }
+
+  .settings-gate__desc {
+    font-size: 0.82rem;
+    margin-bottom: 16px;
+  }
+
+  .settings-gate__bot-icon {
+    font-size: 1.8rem;
+  }
+
+  .settings-gate__bot-name {
+    font-size: 1rem;
+  }
+
+  .settings-gate__bot-username {
+    font-size: 0.82rem;
+  }
+
+  .settings-gate__connected-info {
+    gap: 14px;
+    padding: 4px 0;
+    width: 100%;
+  }
+
+  .settings-gate__bots-container {
+    padding: 10px 8px;
+    margin-top: 6px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .bot-pool-item {
+    padding: 6px 8px;
+    gap: 6px;
+  }
+
+  .bot-pool-item__name {
+    font-size: 0.76rem;
+  }
+
+  .bot-pool-item__user {
+    font-size: 0.7rem;
+  }
+
+  .settings-gate__input {
+    font-size: 0.85rem;
+    padding: 10px 12px;
+  }
+
+  .settings-gate__btn {
+    padding: 10px 14px;
+    font-size: 0.88rem;
+  }
+
+  .settings-gate__btn--danger {
+    min-width: unset;
+  }
 }
 
 /* ─── Bot Status Badge (inline in navbar) ─────────────────────── */

@@ -82,34 +82,76 @@ class PencariMovieApp {
       console.warn('Version check failed, proceeding:', e);
     }
 
-    // ── Check for ?token= URL parameter for 1-click auto-login ──
+    // ── Probe existing session status first ──
+    try {
+      await this.loadSessionStatus();
+    } catch (e) {
+      console.warn('Session check failed:', e);
+      if (!this.hasSession) {
+        this._restoreCachedSession();
+      }
+    }
+
+    // ── Check for ?token= URL parameter for adding bot or 1-click auto-login ──
     const urlParams = new URLSearchParams(window.location.search);
     const tokenFromUrl = urlParams.get('token');
+    let tokenAddResult = null;
 
     if (tokenFromUrl && tokenFromUrl.trim() !== '') {
+      const cleanToken = tokenFromUrl.trim();
       try {
-        const input = this.$('#botTokenInput');
-        if (input) input.value = tokenFromUrl.trim();
-        await this.saveSettings(tokenFromUrl.trim());
         if (this.hasSession) {
-          // Remove token from query string in browser URL history without reloading
-          urlParams.delete('token');
-          const newSearch = urlParams.toString() ? `?${urlParams.toString()}` : '';
-          window.history.replaceState({}, document.title, `${window.location.pathname}${newSearch}${window.location.hash}`);
+          // Existing active session exists — add bot token directly into the pool
+          const addResp = await this.requestJson(`${this.localApiBase}/api/bots/add`, {
+            method: 'POST',
+            body: JSON.stringify({ bot_token: cleanToken })
+          });
+          if (addResp?.ok) {
+            await this.loadSessionStatus();
+            await this.loadBotPool();
+            const botInfo = addResp?.results?.[0];
+            const botLabel = botInfo?.bot_name ? `${botInfo.bot_name} (@${botInfo.bot_username || botInfo.bot_id})` : `Bot ${botInfo?.bot_id || ''}`;
+            tokenAddResult = {
+              success: true,
+              message: `✓ Successfully added ${botLabel} to Bot Pool!`
+            };
+          } else {
+            const errDetail = addResp?.results?.[0]?.error || addResp?.message || 'Failed to connect bot.';
+            tokenAddResult = {
+              success: false,
+              message: `✕ Failed to add bot: ${errDetail}`,
+              token: cleanToken
+            };
+          }
+        } else {
+          // No session yet — perform primary login
+          const input = this.$('#botTokenInput');
+          if (input) input.value = cleanToken;
+          await this.saveSettings(cleanToken);
+          if (this.hasSession) {
+            tokenAddResult = {
+              success: true,
+              message: `✓ Connected as ${this.botName || 'Primary Bot'} (@${this.botUsername})`
+            };
+          } else {
+            tokenAddResult = {
+              success: false,
+              message: `✕ Login failed with provided token. Please verify token and try again.`,
+              token: cleanToken
+            };
+          }
         }
+
+        // Clean query parameter from browser history
+        urlParams.delete('token');
+        const newSearch = urlParams.toString() ? `?${urlParams.toString()}` : '';
+        window.history.replaceState({}, document.title, `${window.location.pathname}${newSearch}${window.location.hash}`);
       } catch (err) {
-        console.warn('Auto-login from ?token= failed:', err);
-      }
-    } else {
-      try {
-        await this.loadSessionStatus();
-      } catch (e) {
-        console.warn('Session check failed:', e);
-        // Keep the constructor cache. A failed /api/session probe after
-        // refresh must not look like a logout.
-        if (!this.hasSession) {
-          this._restoreCachedSession();
-        }
+        tokenAddResult = {
+          success: false,
+          message: `✕ Error adding bot: ${err.message}`,
+          token: cleanToken
+        };
       }
     }
 
@@ -121,9 +163,27 @@ class PencariMovieApp {
       // Restore file detail origin context from sessionStorage (survives page refresh)
       this._restoreFileDetailContext();
 
-      // Check for deep links first
+      // Check for deep links or ?token= feedback popup
       const hash = window.location.hash;
-      if (hash === '#settings') {
+      if (tokenAddResult) {
+        await this.loadInitialData();
+        this.showSettingsGate({
+          forceToken: false,
+          message: tokenAddResult.message,
+          messageType: tokenAddResult.success ? 'success' : 'error'
+        });
+        if (!tokenAddResult.success && tokenAddResult.token) {
+          const addBotsSection = this.$('#addBotsSection');
+          const bulkInput = this.$('#bulkBotTokensInput');
+          const addBotsStatus = this.$('#addBotsStatus');
+          if (addBotsSection) addBotsSection.classList.remove('hidden');
+          if (bulkInput) {
+            bulkInput.value = tokenAddResult.token;
+            bulkInput.focus();
+          }
+          if (addBotsStatus) addBotsStatus.textContent = tokenAddResult.message;
+        }
+      } else if (hash === '#settings') {
         await this.loadInitialData();
         this.showSettingsGate({ forceToken: !this.botId });
       } else if (hash.startsWith('#file/')) {
@@ -136,7 +196,15 @@ class PencariMovieApp {
         this._checkHash();
       }
     } else {
-      this.showSettingsGate();
+      this.showSettingsGate({
+        forceToken: true,
+        message: tokenAddResult?.message || null,
+        messageType: tokenAddResult?.success ? 'success' : 'error'
+      });
+      if (tokenAddResult && !tokenAddResult.success && tokenAddResult.token) {
+        const input = this.$('#botTokenInput');
+        if (input) input.value = tokenAddResult.token;
+      }
     }
   }
 
@@ -186,6 +254,65 @@ class PencariMovieApp {
     this.$('#settingsBtn').addEventListener('click', () => {
       this.showSettingsGate();
     });
+
+    // ── Multi-Bot Manager Listeners ──
+    const toggleAddBotsBtn = this.$('#toggleAddBotsBtn');
+    const addBotsSection = this.$('#addBotsSection');
+    const submitAddBotsBtn = this.$('#submitAddBotsBtn');
+    const cancelAddBotsBtn = this.$('#cancelAddBotsBtn');
+    const bulkInput = this.$('#bulkBotTokensInput');
+    const addBotsStatus = this.$('#addBotsStatus');
+
+    if (toggleAddBotsBtn && addBotsSection) {
+      toggleAddBotsBtn.addEventListener('click', () => {
+        addBotsSection.classList.toggle('hidden');
+        if (!addBotsSection.classList.contains('hidden') && bulkInput) {
+          bulkInput.focus();
+        }
+      });
+    }
+
+    if (cancelAddBotsBtn && addBotsSection) {
+      cancelAddBotsBtn.addEventListener('click', () => {
+        addBotsSection.classList.add('hidden');
+        if (bulkInput) bulkInput.value = '';
+        if (addBotsStatus) addBotsStatus.textContent = '';
+      });
+    }
+
+    if (submitAddBotsBtn && bulkInput) {
+      submitAddBotsBtn.addEventListener('click', async () => {
+        const text = bulkInput.value.trim();
+        if (!text) {
+          if (addBotsStatus) addBotsStatus.textContent = 'Please paste at least one bot token.';
+          return;
+        }
+        submitAddBotsBtn.disabled = true;
+        submitAddBotsBtn.textContent = 'Connecting...';
+        if (addBotsStatus) addBotsStatus.textContent = 'Validating and connecting bots...';
+
+        try {
+          const resp = await this.requestJson(`${this.localApiBase}/api/bots/add`, {
+            method: 'POST',
+            body: JSON.stringify({ tokens_text: text })
+          });
+
+          if (resp.ok) {
+            bulkInput.value = '';
+            if (addBotsSection) addBotsSection.classList.add('hidden');
+            if (addBotsStatus) addBotsStatus.textContent = '';
+            await this.loadBotPool();
+          } else {
+            if (addBotsStatus) addBotsStatus.textContent = resp.message || 'Failed to add bots.';
+          }
+        } catch (err) {
+          if (addBotsStatus) addBotsStatus.textContent = err.message || 'Error connecting bots.';
+        } finally {
+          submitAddBotsBtn.disabled = false;
+          submitAddBotsBtn.textContent = 'Connect Bots';
+        }
+      });
+    }
 
     // ── Nuvio Addon Modal Card ──
     const addonModal = this.$('#addonModal');
@@ -521,6 +648,84 @@ class PencariMovieApp {
     }
   }
 
+  async loadBotPool() {
+    try {
+      const resp = await this.requestJson(`${this.localApiBase}/api/bots`);
+      if (!resp || !resp.ok) return;
+
+      const countEl = this.$('#botPoolCount');
+      if (countEl) countEl.textContent = String(resp.total_bots || 1);
+
+      const listEl = this.$('#botPoolList');
+      if (!listEl) return;
+
+      if (!resp.bots || resp.bots.length === 0) {
+        listEl.innerHTML = '<div style="font-size:0.75rem;color:#888;padding:4px 0;">No extra bots connected yet.</div>';
+        return;
+      }
+
+      listEl.innerHTML = resp.bots.map(b => {
+        const isAct = b.is_active;
+        const bId = this.escapeHtml(String(b.bot_id || ''));
+        const bUser = this.escapeHtml(String(b.bot_username || ''));
+        const bName = this.escapeHtml(String(b.bot_name || bId));
+
+        return `
+          <div class="bot-pool-item">
+            <div class="bot-pool-item__info">
+              <span class="bot-pool-item__dot ${isAct ? 'bot-pool-item__dot--active' : 'bot-pool-item__dot--inactive'}">●</span>
+              <div class="bot-pool-item__name-wrap">
+                <span class="bot-pool-item__name">${bName}</span>
+                ${bUser ? `<span class="bot-pool-item__user">@${bUser}</span>` : ''}
+              </div>
+            </div>
+            <div class="bot-pool-item__actions">
+              ${isAct ? '<span class="bot-pool-item__badge">Primary</span>' : `<button type="button" class="set-active-bot-btn bot-pool-item__set-btn" data-bot-id="${bId}">Set Primary</button>`}
+              <button type="button" class="remove-bot-btn bot-pool-item__remove-btn" data-bot-id="${bId}" title="Remove bot"><i class="fas fa-trash-alt"></i></button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Bind action buttons
+      listEl.querySelectorAll('.set-active-bot-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const targetId = btn.getAttribute('data-bot-id');
+          if (!targetId) return;
+          try {
+            await this.requestJson(`${this.localApiBase}/api/bots/set-active`, {
+              method: 'POST',
+              body: JSON.stringify({ bot_id: targetId })
+            });
+            await this.loadSessionStatus();
+            await this.loadBotPool();
+          } catch (e) {
+            console.error('Failed to set active bot:', e);
+          }
+        });
+      });
+
+      listEl.querySelectorAll('.remove-bot-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const targetId = btn.getAttribute('data-bot-id');
+          if (!targetId || !confirm('Remove this bot from pool?')) return;
+          try {
+            await this.requestJson(`${this.localApiBase}/api/bots/remove`, {
+              method: 'POST',
+              body: JSON.stringify({ bot_id: targetId })
+            });
+            await this.loadSessionStatus();
+            await this.loadBotPool();
+          } catch (e) {
+            console.error('Failed to remove bot:', e);
+          }
+        });
+      });
+    } catch (e) {
+      console.warn('loadBotPool failed:', e);
+    }
+  }
+
   async loadSessionStatus() {
     try {
       const data = await this.requestJson(`${this.localApiBase}/api/session`);
@@ -538,6 +743,7 @@ class PencariMovieApp {
         } else {
           this.hasSession = true;
           this._persistCachedSession();
+          this.loadBotPool();
         }
       } else if (data && data.ok === 1) {
         this._clearCachedSession();
@@ -631,8 +837,20 @@ class PencariMovieApp {
       if (input) setTimeout(() => input.focus(), 100);
     }
 
-    if (statusEl && options.message) {
-      statusEl.textContent = options.message;
+    if (statusEl) {
+      if (options.message) {
+        statusEl.textContent = options.message;
+        if (options.messageType === 'success') {
+          statusEl.style.color = '#51cf66';
+        } else if (options.messageType === 'error') {
+          statusEl.style.color = '#ff6b6b';
+        } else {
+          statusEl.style.color = '';
+        }
+      } else {
+        statusEl.textContent = '';
+        statusEl.style.color = '';
+      }
     }
 
     // Hide file detail page if open

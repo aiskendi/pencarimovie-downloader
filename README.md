@@ -1,143 +1,235 @@
-# PencariMovie Downloader
+# 🎬 PencariMovie Server & Downloader
 
-Local Telegram file downloader.
+<p align="center">
+  <strong>Fast, self-hosted, browser-based Telegram file streaming & downloader server powered by MTProto.</strong>
+</p>
 
-This app runs on your own device and opens in your browser. It searches PencariMovie results, resolves Telegram file links when needed, then downloads or plays supported files through the local downloader.
+<p align="center">
+  <a href="#-key-features">Features</a> •
+  <a href="#-quick-start--installation">Installation</a> •
+  <a href="#-nuvio-addon-integration">Nuvio Addon</a> •
+  <a href="#-how-it-works">How It Works</a> •
+  <a href="#-cli-commands">CLI Usage</a> •
+  <a href="#-security--privacy">Security</a>
+</p>
 
-## FAQ
+---
 
-### ❓ What does it do?
+## 💡 Overview
 
-- **Direct bot server connection** – Talks straight to Telegram’s MTProto, which is faster than going through a normal user client.
-- **No Telegram client needed** – Everything runs in your web browser; no app, no installation.
-- **Zero dependencies** – A standalone script powered by FrankenPHP. No PHP, no web server, nothing extra to install.
+**PencariMovie Server** is a standalone, lightweight local server that turns Telegram into your personal media streaming and high-speed downloading hub. It connects directly to Telegram’s MTProto protocol using MadelineProto and serves media through a modern Netflix-style web app or directly into media players like **Nuvio**.
 
-### ❓ Why do I need it?
+Everything runs directly on your own device (PC, Android, TV Box, or Server). No Telegram client installation, no phone number login, and zero third-party dependencies required.
 
-- **Privacy first** – Log in with just a bot token, no phone number required. (Ask a family member or friend with Telegram to create a bot for you – it’s super easy.)
-- **Works on any device** – Smart TVs, TV boxes, car tablets… if it has a browser, it works. Just open `http://your-lan-ip:port`.
-- **Straight to the point** – No cluttered chats, no channels, no bot search. Just pure, focused file searching.
+---
 
-### ❓ How do I get started?
+## ✨ Key Features
 
-1. Get a bot token from [@CreateNewTelegramBot](https://t.me/CreateNewTelegramBot?start=localserver) (takes 30 seconds).
-2. Run the script and open the web panel.
-3. Start searching and downloading instantly.
+- ⚡ **Direct MTProto Streaming & Chunk Downloader**
+  Connects directly to Telegram's data centers via MTProto for maximum download throughput and zero-buffer HTTP byte-range video seeking.
 
-## Stremio / Nuvio Addon
+- 📺 **Netflix-Style Web Experience**
+  Includes a built-in FlixBrowse dark theme web player with categories, trending keywords, instant search overlay, and detailed media views.
 
-The server includes a built‑in addon compatible with Stremio (and Nuvio). Once the server is running and a bot token is configured, you can add it to your Stremio client:
+- 🔌 **Native Nuvio Addon Integration**
+  Out-of-the-box Nuvio addon server (`/manifest.json` & `/nuvio`). Browse catalogs and play movies/series directly in the Nuvio app on your Smart TV, phone, or tablet over local Wi-Fi.
 
-- **Addon URL**: `http://127.0.0.1:8088` (or replace with your LAN IP if accessing from another device).
-- **Endpoints**:
-  - `http://127.0.0.1:8088/manifest.json` – addon manifest (automatically used when you add the base URL).
+- 🤖 **Multi-Bot Connection Pooling**
+  Add multiple Telegram bot tokens into a connection pool (`/api/bots`) with automatic round-robin balancing to avoid Telegram rate limits and boost concurrent download speeds.
 
-### How to install in Stremio
+- 📡 **Local Network (LAN) Sharing**
+  Auto-detects your LAN IP on startup. Open the web player or configure your TV's Nuvio addon from any device on your Wi-Fi (`http://192.168.x.x:8088`).
 
-1. Open Stremio.
-2. Go to **Addons** → **Community Addons**.
-3. In the **Addon URL** field, enter `http://127.0.0.1:8088/manifest.json` (or your local IP if the server is on another device).
-4. Click **Install**.
-5. The addon will appear in your addon list; you can now browse and play content from your PencariMovie library.
+- 🔒 **Privacy-First & Stateless Token Auth**
+  No phone number required — log in using standard Telegram Bot Tokens. Tokens are never written to disk in plain text; MadelineProto session files (`storage/`) manage active sessions securely.
 
-### Requirements
+- 📦 **Zero-Dependency Standalone Runtime**
+  Ships with bundled high-performance **FrankenPHP** runtime. No separate PHP installation, web server, or Node.js required.
 
-- The server must be running and the bot token must be validated (the web panel will guide you through setup).
-- The addon uses the same token – no additional configuration is needed.
-- For streaming, ensure your Stremio player can handle the media formats returned by the server.
+- 🔄 **Automatic Start-Time OTA Updates**
+  Launchers automatically check GitHub Releases on startup, updating the server code in place while preserving your active bot sessions.
 
-## Warning
+- 🪟 **Windows System Tray Integration**
+  Runs cleanly in the background with a system tray icon. Minimize distraction with quick 1-click open, pause, and exit options.
 
-- Use only on a trusted private network.
-- Do not expose your bot token or session files.
+---
 
-## Download and run
+## 🚀 Quick Start & Installation
 
-### Android App
+### 1️⃣ Android Standalone App (APK)
 
-ARM64
-https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie_arm64-v8a.apk
+Install the standalone Android application with built-in background service and native process manager:
 
-On every Start the APK checks GitHub `releases/latest`. If a newer tag exists it downloads `pencarimovie-downloader-linux-aarch64.tar.gz` and extracts it over the app folder, leaving `storage/` (bot session) in place.
+- **[📥 Download APK (ARM64-v8a)](https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie_arm64-v8a.apk)**
 
-### Termux (Android)
+> ⚠️ **Google Play Protect Notice**:
+> Because this APK is downloaded outside the Play Store and contains terminal/server utilities, Android / Google Play Protect may show a warning: **"Blocked by Play Protect"** or **"Unrecognized app"**.
+> ➡️ Tap **"More details"** and select **"Install anyway"** to continue.
 
-The Google Play version of Termux will not work correctly. Install Termux from the official GitHub releases page instead: https://github.com/termux/termux-app/releases
+_Note: On launch, the APK verifies updates from GitHub Releases, downloads the latest application core if needed, and starts the server in a battery-optimized background service._
 
-For most modern Android phones with ARM64 CPUs, this APK should work: https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_arm64-v8a.apk
+---
 
-Universal arm64-v8a, armeabi-v7a, x86, and x86_64: https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_universal.apk
+### 2️⃣ Android via Termux
+
+Recommended for advanced Android users, TV boxes, or headless setups.
+
+> **Important**: Use the [Official Termux GitHub Release](https://github.com/termux/termux-app/releases) (the Google Play version is deprecated). If prompted by Play Protect during Termux installation, tap **"More details"** → **"Install anyway"**.
 
 ```bash
-pkg install wget proot -y && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-termux.sh && bash pencarimovie-termux.sh
+pkg install wget proot -y && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-termux.sh && bash pencarimovie-termux.sh
 ```
 
-```bash
-bash pencarimovie-termux.sh
-bash pencarimovie-termux.sh --stop
-bash pencarimovie-termux.sh --restart
-```
+---
 
-On every start the installer checks GitHub `releases/latest`. If a newer tag exists it downloads that package and extracts it over the app folder, leaving `storage/` (bot session) in place.
+### 3️⃣ Windows (10 / 11)
 
-### Windows
+Run the following in **PowerShell**:
 
 ```powershell
-Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-windows.bat" -OutFile "pencarimovie-windows.bat" -UseBasicParsing; .\pencarimovie-windows.bat
+Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-windows.bat" -OutFile "pencarimovie-windows.bat" -UseBasicParsing; .\pencarimovie-windows.bat
 ```
 
-```text
-.\pencarimovie-windows.bat           # Start
-.\pencarimovie-windows.bat --stop    # Stop
-.\pencarimovie-windows.bat --restart # Restart
-```
+- Launches in the background with a **System Tray** helper icon.
+- Double-click the tray icon to open the web dashboard.
+- Right-click the tray icon for **Open** / **Stop Server**.
 
-On Windows the running server also adds a **system tray icon**. Double-click it to open the app, or right-click for **Open** / **Stop Server**.
+---
 
-On every start the installer checks GitHub `releases/latest`. If a newer tag exists it downloads that package and extracts it over the app folder, leaving `storage/` (bot session) in place.
-
-### Linux
+### 4️⃣ Linux (Ubuntu, Debian, Arch, Fedora)
 
 ```bash
-curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-linux.sh && bash pencarimovie-linux.sh
+curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-linux.sh && bash pencarimovie-linux.sh
 ```
+
+---
+
+### 5️⃣ macOS (Apple Silicon & Intel)
 
 ```bash
-bash pencarimovie-linux.sh
-bash pencarimovie-linux.sh --stop
-bash pencarimovie-linux.sh --restart
+# For Apple Silicon (M1/M2/M3/M4):
+mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+
+# For Intel Mac:
+mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-downloader-mac-x86_64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 ```
 
-On every start the installer checks GitHub `releases/latest`. If a newer tag exists it downloads that package and extracts it over the app folder, leaving `storage/` (bot session) in place.
+---
 
-### macOS (not yet tested)
+## ⚙️ Initial Setup & Bot Authentication
 
-Choose the correct macOS package for your Mac:
+Once the server is running, open your browser at:
+👉 **`http://127.0.0.1:8088`** _(or your device's LAN IP)_
 
-- Apple Silicon: `pencarimovie-downloader-mac-arm64.tar.gz`
-- Intel Mac: `pencarimovie-downloader-mac-x86_64.tar.gz`
+1. **Obtain a Bot Token**:
+   - Create a free bot in seconds via [@CreateNewTelegramBot](https://t.me/CreateNewTelegramBot?start=localserver) or [@BotFather](https://t.me/BotFather).
+2. **Connect**:
+   - Paste the bot token into the setup gate prompt and click **Connect**.
+3. **Session Created**:
+   - The backend validates the bot, establishes encrypted MTProto communication, and persists the session.
+4. **(Optional) Add Bot Pool**:
+   - Add extra bot tokens in Settings to enable multi-bot load balancing and faster parallel streams.
+
+---
+
+## 📺 Nuvio Addon Integration
+
+PencariMovie Server includes a built-in addon server designed for **Nuvio**.
+
+> ℹ️ **Note on Stremio vs Nuvio**:
+> **Stremio is not supported** because Stremio strictly enforces HTTPS across its app and rejects local HTTP LAN endpoints (`http://192.168.x.x:8088`). **Nuvio** is fully compatible with local HTTP addon endpoints.
+
+### How to Install in Nuvio
+
+1. Ensure your device (Android TV, phone, tablet) is connected to the **same Wi-Fi / LAN network** as this server.
+2. Open the **Nuvio** app on your device.
+3. Go to **Profile** ➔ **Content & Discovery** ➔ **Addons**.
+4. In the Addon URL field, enter your server's Manifest URL:
+   - **Local device**: `http://127.0.0.1:8088/manifest.json`
+   - **Other devices on Wi-Fi (TV/Tablet)**: `http://<YOUR-LAN-IP>:8088/manifest.json`
+5. Click **Install / Add**.
+6. You can now browse catalogs, search movies/series, and stream directly through Nuvio.
+
+### Addon Helper Page
+
+Visit **`http://127.0.0.1:8088/nuvio`** in any web browser to view your device's detected LAN manifest URL, one-click copy buttons, and connection instructions.
+
+---
+
+## 🛠️ CLI Commands & Process Control
+
+Each platform script provides intuitive control flags:
+
+| Platform    | Start                         | Stop                                 | Restart                                 |
+| :---------- | :---------------------------- | :----------------------------------- | :-------------------------------------- |
+| **Windows** | `.\pencarimovie-windows.bat`  | `.\pencarimovie-windows.bat --stop`  | `.\pencarimovie-windows.bat --restart`  |
+| **Linux**   | `bash pencarimovie-linux.sh`  | `bash pencarimovie-linux.sh --stop`  | `bash pencarimovie-linux.sh --restart`  |
+| **Termux**  | `bash pencarimovie-termux.sh` | `bash pencarimovie-termux.sh --stop` | `bash pencarimovie-termux.sh --restart` |
+
+### Custom Port Configuration
+
+By default, the server binds to port `8088`. You can change the port using the `PORT` environment variable:
 
 ```bash
-mkdir pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+# Linux / macOS / Termux
+PORT=9090 bash pencarimovie-linux.sh
+
+# Windows Command Prompt
+set PORT=9090 && .\pencarimovie-windows.bat
+
+# Windows PowerShell
+$env:PORT="9090"; .\pencarimovie-windows.bat
 ```
 
-### On Browser
+---
 
-Open the local app:
+## 🏗️ Architecture & How It Works
 
-```text
-http://127.0.0.1:8088
+```
+┌────────────────────────────────────────────────────────┐
+│      Clients: Browser / Nuvio / External Players       │
+└───────────────────────────┬────────────────────────────┘
+                            │ HTTP (Port 8088)
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│  FrankenPHP Server (Caddy-powered, Embedded PHP 8.2+)  │
+│  - backend.php (API Routing & MadelineProto Controller)│
+│  - public/ (FlixBrowse Netflix-Style UI & Assets)      │
+│  - /manifest.json & /nuvio (Nuvio v3 Addon Server)     │
+└──────────────┬──────────────────────────┬──────────────┘
+               │                          │
+               ▼                          ▼
+┌──────────────────────────────┐ ┌───────────────────────┐
+│   WordPress REST / AJAX API  │ │ Telegram Data Centers │
+│  (Metadata, Catalog, Search) │ │ (MTProto Protocol via │
+│                              │ │  MadelineProto Engine)│
+└──────────────────────────────┘ └───────────────────────┘
 ```
 
-On first launch, the app shows the bot-token setup screen before the search page.
+1. **Discovery & Metadata**: The frontend and Nuvio addon fetch rich media catalogs, posters, and file references from the backend proxy.
+2. **On-Demand Resolution**: Bot API file identifiers (`file_id_mt` / `short_code`) are resolved on demand.
+3. **High-Speed MTProto Stream**: [`backend.php`](backend.php:1) invokes MadelineProto's [`downloadToBrowser()`](backend.php:4223) to stream media bytes directly to the client's HTTP response stream.
 
-1. Paste your Telegram bot token in the **Bot Token** field.
-2. Click **Validate**.
-3. The token is also synced to PencariMovie.com for webhook setup.
-4. After validation succeeds, the homepage opens.
+---
 
-On subsequent launches, the existing session resumes automatically. If the session expires, the setup screen appears again for re-login.
+## 🔒 Security & Privacy
 
-**Security**: The bot token is never stored on disk. Only the MadelineProto session file (`storage/session.madeline`) persists after login. The bot ID comes from `getSelf()`, not token parsing. The `/api/config` endpoint has been removed — no credentials are exposed via the API.
+- **No Plaintext Token Storage**: Bot tokens are used only during initial handshake and are never saved to disk.
+- **Local Isolated Sessions**: MTProto session state is safely maintained inside the local [`storage/`](storage/) directory.
+- **Private Network Only**: Always run the server on a trusted local network or behind a secured VPN (such as Tailscale or WireGuard) if accessing remotely.
 
-Do not share your session files, or bot token with other people.
+---
+
+## 🙏 Credits & Acknowledgments
+
+Special thanks to the open-source projects that make this server possible:
+
+- [**FrankenPHP**](https://github.com/dunglas/frankenphp) — Modern PHP app server written in Go with Caddy integration.
+- [**MadelineProto**](https://github.com/danog/MadelineProto) — High-performance async PHP MTProto client for Telegram.
+- [**Termux**](https://github.com/termux/termux-app) — Android terminal emulator and Linux environment.
+
+---
+
+<p align="center">
+  <sub>Built with ❤️ for private, high-speed streaming.</sub>
+</p>
