@@ -108,10 +108,10 @@ curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downlo
 
 ```bash
 # For Apple Silicon (M1/M2/M3/M4):
-mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.2/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 
 # For Intel Mac:
-mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-downloader-mac-x86_64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.2/pencarimovie-downloader-mac-x86_64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 ```
 
 ---
