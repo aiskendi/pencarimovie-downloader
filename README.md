@@ -112,10 +112,10 @@ curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downlo
 
 ```bash
 # For Apple Silicon (M1/M2/M3/M4):
-mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.2/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 
 # For Intel Mac:
-mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-downloader-mac-x86_64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.2/pencarimovie-downloader-mac-x86_64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 ```
 
 ---
@@ -126,7 +126,7 @@ Once the server is running, open your browser at:
 👉 **`http://127.0.0.1:8088`** _(or your device's LAN IP)_
 
 1. **Obtain a Bot Token**:
-   - Create a free bot in seconds via [@CreateNewTelegramBot](https://t.me/CreateNewTelegramBot?start=localserver) or [@BotFather](https://t.me/BotFather).
+   - Create a free bot in seconds via [@CreateNewTelegramBot](https://t.me/CreateNewTelegramBot?start=localserver).
 2. **Connect**:
    - Paste the bot token into the setup gate prompt and click **Connect**.
 3. **Session Created**:
@@ -218,7 +218,7 @@ $env:PORT="9090"; .\pencarimovie-windows.bat
 
 ---
 
-## 🏗️ Architecture & How It Works
+## 🏗️ How It Works
 
 ```
 ┌────────────────────────────────────────────────────────┐
