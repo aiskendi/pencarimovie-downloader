@@ -7,7 +7,8 @@
 <p align="center">
   <a href="#-key-features">Features</a> •
   <a href="#-quick-start--installation">Installation</a> •
-  <a href="#-nuvio-addon-integration">Nuvio Addon</a> •
+  <a href="#-stremio--nuvio-addon-integration">Stremio & Nuvio</a> •
+  <a href="#-cloudflare-tunnel">Cloudflare Tunnel</a> •
   <a href="#-how-it-works">How It Works</a> •
   <a href="#-cli-commands">CLI Usage</a> •
   <a href="#-security--privacy">Security</a>
@@ -17,9 +18,9 @@
 
 ## 💡 Overview
 
-**PencariMovie Server** is a standalone, lightweight local server that turns Telegram into your personal media streaming and high-speed downloading hub. It connects directly to Telegram’s MTProto protocol using MadelineProto and serves media through a modern Netflix-style web app or directly into media players like **Nuvio**.
+**PencariMovie Server** is a standalone, lightweight local media server that connects directly to Telegram’s MTProto protocol using MadelineProto. It turns Telegram into your personal media streaming and high-speed downloading hub, serving video files through a modern Netflix-style web app or directly into media players like **Stremio** and **Nuvio**.
 
-Everything runs directly on your own device (PC, Android, TV Box, or Server). No Telegram client installation, no phone number login, and zero third-party dependencies required.
+Everything runs locally on your own machine (PC, Android, TV Box, or Server). No Telegram client installation, no phone number login, and zero third-party dependencies required.
 
 ---
 
@@ -31,14 +32,17 @@ Everything runs directly on your own device (PC, Android, TV Box, or Server). No
 - 📺 **Netflix-Style Web Experience**
   Includes a built-in FlixBrowse dark theme web player with categories, trending keywords, instant search overlay, and detailed media views.
 
-- 🔌 **Native Nuvio Addon Integration**
-  Out-of-the-box Nuvio addon server (`/manifest.json` & `/nuvio`). Browse catalogs and play movies/series directly in the Nuvio app on your Smart TV, phone, or tablet over local Wi-Fi.
+- 🔌 **Full Stremio & Nuvio Addon Integration**
+  Out-of-the-box addon server (`/manifest.json` & `/nuvio`). Browse catalogs, discover movies/series, and stream directly in **Stremio** (via In-Browser API Sync or HTTPS Tunnel) and **Nuvio** (via local Wi-Fi / LAN).
+
+- ☁️ **Built-in Cloudflare Quick Tunnel**
+  One-click TryCloudflare tunnel built right into Settings. Instantly exposes a secure public HTTPS URL (`*.trycloudflare.com`) without creating a Cloudflare account or configuring port forwarding—perfect for Stremio HTTPS requirements and streaming while away from home.
 
 - 🤖 **Multi-Bot Connection Pooling**
   Add multiple Telegram bot tokens into a connection pool (`/api/bots`) with automatic round-robin balancing to avoid Telegram rate limits and boost concurrent download speeds.
 
 - 📡 **Local Network (LAN) Sharing**
-  Auto-detects your LAN IP on startup. Open the web player or configure your TV's Nuvio addon from any device on your Wi-Fi (`http://192.168.x.x:8088`).
+  Auto-detects your LAN IP on startup. Open the web player or configure your TV's addon from any device on your Wi-Fi (`http://192.168.x.x:8088`).
 
 - 🔒 **Privacy-First & Stateless Token Auth**
   No phone number required — log in using standard Telegram Bot Tokens. Tokens are never written to disk in plain text; MadelineProto session files (`storage/`) manage active sessions securely.
@@ -132,27 +136,58 @@ Once the server is running, open your browser at:
 
 ---
 
-## 📺 Nuvio Addon Integration
+## 📺 Stremio & Nuvio Addon Integration
 
-PencariMovie Server includes a built-in addon server designed for **Nuvio**.
+PencariMovie Server includes a built-in addon server fully compatible with both **Stremio** and **Nuvio**.
 
-> ℹ️ **Note on Stremio vs Nuvio**:
-> **Stremio is not supported** because Stremio strictly enforces HTTPS across its app and rejects local HTTP LAN endpoints (`http://192.168.x.x:8088`). **Nuvio** is fully compatible with local HTTP addon endpoints.
+### 🌟 1. Installing in Stremio
 
-### How to Install in Nuvio
+Stremio Web and modern Stremio clients enforce HTTPS and block pasting raw `http://` addon URLs into the search bar. We provide two easy methods to install:
 
-1. Ensure your device (Android TV, phone, tablet) is connected to the **same Wi-Fi / LAN network** as this server.
+#### Method A: Stremio API Sync (Recommended for Local/LAN)
+
+1. Open the PencariMovie web dashboard at `http://127.0.0.1:8088` and click the **Addon / Stremio** icon in the navbar.
+2. Under **Install via Stremio API Sync**, select **Wi-Fi / LAN** or **Localhost**.
+3. Enter your Stremio email and password (or paste your Stremio Auth Key).
+4. Click **Install via Stremio API Sync**. The browser sends the sync request directly to `https://api.strem.io`—your credentials are never stored or seen by the server.
+5. Restart Stremio on your TV, phone, or desktop, and PencariMovie will appear in your addon list!
+
+#### Method B: Cloudflare Tunnel (HTTPS Manifest URL)
+
+1. Enable **Cloudflare Tunnel** in Settings (see below).
+2. Copy the generated HTTPS manifest URL (e.g., `https://<subdomain>.trycloudflare.com/manifest.json`).
+3. Paste the HTTPS URL directly into Stremio's Addon search box on any device or network and click **Install**.
+
+---
+
+### 🌟 2. Installing in Nuvio
+
+Nuvio natively supports local HTTP manifests:
+
+1. Connect your device (Android TV, phone, tablet) to the **same Wi-Fi / LAN network** as this server.
 2. Open the **Nuvio** app on your device.
 3. Go to **Profile** ➔ **Content & Discovery** ➔ **Addons**.
 4. In the Addon URL field, enter your server's Manifest URL:
    - **Local device**: `http://127.0.0.1:8088/manifest.json`
    - **Other devices on Wi-Fi (TV/Tablet)**: `http://<YOUR-LAN-IP>:8088/manifest.json`
+   - **Remote / Mobile Data**: Use your Cloudflare Tunnel HTTPS manifest URL.
 5. Click **Install / Add**.
-6. You can now browse catalogs, search movies/series, and stream directly through Nuvio.
 
-### Addon Helper Page
+_(You can also visit `http://127.0.0.1:8088/nuvio` on your browser for one-click URL copying and live diagnostics)._
 
-Visit **`http://127.0.0.1:8088/nuvio`** in any web browser to view your device's detected LAN manifest URL, one-click copy buttons, and connection instructions.
+---
+
+## ☁️ Cloudflare Tunnel
+
+Need to stream to Stremio or Nuvio when away from home, or need a valid HTTPS manifest? PencariMovie Server includes a built-in **TryCloudflare** quick tunnel runner:
+
+- **Zero Configuration**: No Cloudflare account, domain name, or port forwarding required.
+- **Automatic Setup**: The server automatically downloads the official `cloudflared` binary into `storage/bin/` on first use.
+- **How to Enable**:
+  1. Open the local dashboard (`http://127.0.0.1:8088`) and click **⚙️ Settings**.
+  2. Scroll to **Cloudflare Tunnel** and click **Enable Tunnel**.
+  3. Copy your live `https://*.trycloudflare.com` URL to use anywhere!
+- **Security Boundaries**: Administrative actions (bot login/logout, adding tokens, starting/stopping the tunnel) are restricted to local requests. External visitors can only stream and browse media.
 
 ---
 
@@ -187,15 +222,16 @@ $env:PORT="9090"; .\pencarimovie-windows.bat
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│      Clients: Browser / Nuvio / External Players       │
+│      Clients: Browser / Stremio / Nuvio / Players      │
 └───────────────────────────┬────────────────────────────┘
-                            │ HTTP (Port 8088)
+                            │ HTTP / HTTPS (Tunnel)
                             ▼
 ┌────────────────────────────────────────────────────────┐
 │  FrankenPHP Server (Caddy-powered, Embedded PHP 8.2+)  │
 │  - backend.php (API Routing & MadelineProto Controller)│
 │  - public/ (FlixBrowse Netflix-Style UI & Assets)      │
-│  - /manifest.json & /nuvio (Nuvio v3 Addon Server)     │
+│  - /manifest.json (Stremio & Nuvio v3 Addon Server)    │
+│  - Cloudflare Tunnel Manager (storage/bin/cloudflared) │
 └──────────────┬──────────────────────────┬──────────────┘
                │                          │
                ▼                          ▼
@@ -206,9 +242,9 @@ $env:PORT="9090"; .\pencarimovie-windows.bat
 └──────────────────────────────┘ └───────────────────────┘
 ```
 
-1. **Discovery & Metadata**: The frontend and Nuvio addon fetch rich media catalogs, posters, and file references from the backend proxy.
+1. **Discovery & Metadata**: The frontend and addon endpoints fetch rich media catalogs, posters, and file references.
 2. **On-Demand Resolution**: Bot API file identifiers (`file_id_mt` / `short_code`) are resolved on demand.
-3. **High-Speed MTProto Stream**: [`backend.php`](backend.php:1) invokes MadelineProto's [`downloadToBrowser()`](backend.php:4223) to stream media bytes directly to the client's HTTP response stream.
+3. **High-Speed MTProto Stream**: [`backend.php`](backend.php:1) invokes MadelineProto's [`downloadToBrowser()`](backend.php:4223) with `.mp4` stream paths to deliver direct, seekable video bytes to Stremio, Nuvio, and the web player.
 
 ---
 
@@ -216,16 +252,19 @@ $env:PORT="9090"; .\pencarimovie-windows.bat
 
 - **No Plaintext Token Storage**: Bot tokens are used only during initial handshake and are never saved to disk.
 - **Local Isolated Sessions**: MTProto session state is safely maintained inside the local [`storage/`](storage/) directory.
-- **Private Network Only**: Always run the server on a trusted local network or behind a secured VPN (such as Tailscale or WireGuard) if accessing remotely.
+- **Protected Endpoints**: Administrative functions (token login, bot management, tunnel configuration) require local network origin and are blocked over external tunnels.
+- **Private Network Only**: Run the server on a trusted local network, or use the optional Cloudflare Tunnel when remote streaming is desired.
 
 ---
 
 ## 🙏 Credits & Acknowledgments
 
-Special thanks to the open-source projects that make this server possible:
+Special thanks to the open-source projects and technologies that make this server possible:
 
+- [**PHP**](https://www.php.net/) — The powerful scripting and server-side language powering the backend logic and async execution.
 - [**FrankenPHP**](https://github.com/dunglas/frankenphp) — Modern PHP app server written in Go with Caddy integration.
 - [**MadelineProto**](https://github.com/danog/MadelineProto) — High-performance async PHP MTProto client for Telegram.
+- [**cloudflared**](https://github.com/cloudflare/cloudflared) — Official Cloudflare tunnel client used for optional TryCloudflare quick tunnels.
 - [**Termux**](https://github.com/termux/termux-app) — Android terminal emulator and Linux environment.
 
 ---
