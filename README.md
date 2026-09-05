@@ -64,7 +64,7 @@ Everything runs locally on your own machine (PC, Android, TV Box, or Server). No
 
 Install the standalone Android application with built-in background service and native process manager:
 
-- **[📥 Download APK (ARM64-v8a)](https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie_arm64-v8a.apk)**
+- **[📥 Download APK (ARM64-v8a)](https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie_arm64-v8a.apk)**
 
 > ⚠️ **Google Play Protect Notice**:
 > Because this APK is downloaded outside the Play Store and contains terminal/server utilities, Android / Google Play Protect may show a warning: **"Blocked by Play Protect"** or **"Unrecognized app"**.
@@ -81,7 +81,7 @@ Recommended for advanced Android users, TV boxes, or headless setups.
 > **Important**: Use the [Official Termux GitHub Release](https://github.com/termux/termux-app/releases) (the Google Play version is deprecated). If prompted by Play Protect during Termux installation, tap **"More details"** → **"Install anyway"**.
 
 ```bash
-pkg install wget proot -y && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-termux.sh && bash pencarimovie-termux.sh
+pkg install wget proot -y && wget https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-termux.sh && bash pencarimovie-termux.sh
 ```
 
 ---
@@ -91,7 +91,7 @@ pkg install wget proot -y && wget https://github.com/aiskendi/pencarimovie-downl
 Run the following in **PowerShell**:
 
 ```powershell
-Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-windows.bat" -OutFile "pencarimovie-windows.bat" -UseBasicParsing; .\pencarimovie-windows.bat
+Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-windows.bat" -OutFile "pencarimovie-windows.bat" -UseBasicParsing; .\pencarimovie-windows.bat
 ```
 
 - Launches in the background with a **System Tray** helper icon.
@@ -103,7 +103,7 @@ Invoke-WebRequest -Uri "https://github.com/aiskendi/pencarimovie-downloader/rele
 ### 4️⃣ Linux (Ubuntu, Debian, Arch, Fedora)
 
 ```bash
-curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.1/pencarimovie-linux.sh && bash pencarimovie-linux.sh
+curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-linux.sh && bash pencarimovie-linux.sh
 ```
 
 ---
@@ -112,10 +112,10 @@ curl -L -o pencarimovie-linux.sh https://github.com/aiskendi/pencarimovie-downlo
 
 ```bash
 # For Apple Silicon (M1/M2/M3/M4):
-mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.2/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-mac-arm64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 
 # For Intel Mac:
-mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.2/pencarimovie-downloader-mac-x86_64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
+mkdir -p pencarimovie-server && cd pencarimovie-server && curl -L -o pencarimovie.tar.gz https://github.com/aiskendi/pencarimovie-downloader/releases/download/v1.0.0/pencarimovie-downloader-mac-x86_64.tar.gz && tar -xzf pencarimovie.tar.gz && bash start.sh
 ```
 
 ---
